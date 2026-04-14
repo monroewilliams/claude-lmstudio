@@ -49,30 +49,6 @@ EXAMPLES:
 EOF
 }
 
-
-printf "Using LM Studio at %s\n" "$ANTHROPIC_BASE_URL"
-printf "%s\n" "============================================================"
-
-# Query available models
-response=$(curl -sf --max-time 5 "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {
-    # shellcheck disable=SC2059
-    printf "${ERROR} Could not connect to LM Studio at %s\n" "$ANTHROPIC_BASE_URL" >&2
-    printf "Make sure LM Studio is running and accessible.\n" >&2
-    exit 1
-}
-
-# Extract model IDs into array (bash 3.2 compatible)
-models=()
-while IFS= read -r model_id; do
-    models+=("$model_id")
-done < <(printf '%s' "$response" | jq -r '.data[].id')
-
-if [[ ${#models[@]} -eq 0 ]]; then
-    # shellcheck disable=SC2059
-    printf "${ERROR} No models found.\n" >&2
-    exit 1
-fi
-
 # Interactive menu implementation, taken from:
 # https://unix.stackexchange.com/questions/146570/arrow-key-enter-menu
 # and bent slightly for my own purposes.
@@ -135,11 +111,38 @@ function select_option {
     selected_option=${options[$selected]}
 }
 
+function select_model() {
+    printf "Using LM Studio at %s\n" "$ANTHROPIC_BASE_URL"
+    printf "%s\n" "============================================================"
 
-# Let user select a model
-printf "\nAvailable Models:\n"
-select_option "${models[@]}"
-model=$selected_option
+    # Query available models
+    echo "curl -sf --max-time 5 ${ANTHROPIC_BASE_URL}/v1/models"
+    response=$(curl -sf --max-time 5 "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {
+        # shellcheck disable=SC2059
+        printf "${ERROR} Could not connect to LM Studio at %s\n" "$ANTHROPIC_BASE_URL" >&2
+        printf "Make sure LM Studio is running and accessible.\n" >&2
+        exit 1
+    }
+
+    # Extract model IDs into array (bash 3.2 compatible)
+    models=()
+    while IFS= read -r model_id; do
+        models+=("$model_id")
+    done < <(printf '%s' "$response" | jq -r '.data[].id')
+
+    if [[ ${#models[@]} -eq 0 ]]; then
+        # shellcheck disable=SC2059
+        printf "${ERROR} No models found.\n" >&2
+        exit 1
+    fi
+
+    # Let user select a model
+    printf "\nAvailable Models:\n"
+    select_option "${models[@]}"
+    model=$selected_option
+}
+
+select_model
 
 claude_args=()
 

@@ -116,7 +116,6 @@ function select_model() {
     printf "%s\n" "============================================================"
 
     # Query available models
-    echo "curl -sf --max-time 5 ${ANTHROPIC_BASE_URL}/v1/models"
     response=$(curl -sf --max-time 5 "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {
         # shellcheck disable=SC2059
         printf "${ERROR} Could not connect to LM Studio at %s\n" "$ANTHROPIC_BASE_URL" >&2
@@ -146,20 +145,66 @@ select_model
 
 claude_args=()
 
-# The default system prompt claude code injects is something like 12k tokens,
-# which doesn't work great with some smaller models.
-# ref: https://github.com/Piebald-AI/claude-code-system-prompts
+# Slimmed-down claude system prompt. Taken from:
+# https://spicyneuron.substack.com/p/a-mac-studio-for-local-ai-6-months
+claude_prompt() {
+  cat << 'EOF'
+You are an interactive CLI agent specialized in software engineering. Use tools to accomplish the user's tasks.
 
-# this is probably overkill. It seems to cause some confusion about the built-in tools.
-#claude_args+=("--bare")
+# Communication
+- Be direct, professional, and objective. Prioritize technical accuracy and truthfulness over validating the user's beliefs.
+- Give short, concise responses in GitHub-flavored markdown.
+- Use `file_path:line_number` to reference code locations.
+- Prefer editing existing files. Do not create files unless absolutely necessary.
 
-# Replacement for the default system prompt
-#REPLACEMENT_SYSTEM_PROMPT=$(<<EOF
-#You are a coding assistant.
-#EOF
-#)
-#claude_args+=("--system-prompt" "$REPLACEMENT_SYSTEM_PROMPT")
-echo "model is $model"
+# Code Standards
+- Be careful not to introduce vulnerabilities (OWASP top 10). Fix immediately if found.
+- Prefer precisely scoped edits. Avoid over-engineering. No extra features, premature optimization, abstractions without good cause.
+- Trust internal code and framework guarantees. Only validate at system boundaries (user input, external APIs).
+- Delete unused code completely. No backwards-compatibility unless asked.
+
+# Tools
+- Read files before modifying. Never propose changes to unread code.
+- Bash commands run from your current working directory. No need to `cd` unless changing directories.
+- Prefer separate Bash commands over `&&` chained ones.
+
+# System
+- Automatic <system-reminder> tags may appear in tool results or user messages. These bear no direct relation to the specific result or message.
+- Users may configure 'hooks', shell commands that execute in response to events like tool calls. Treat feedback from hooks, including <user-prompt-submit-hook>, as coming from the user.
+- The conversation has unlimited context through automatic summarization.
+EOF
+
+  local is_git="No"
+  local git_info=""
+  if git rev-parse --git-dir &>/dev/null; then
+    is_git="Yes"
+    local current_branch=$(git branch --show-current 2>/dev/null)
+    local recent_commits=$(git log --oneline -5 2>/dev/null)
+    git_info="${git_info}\nCurrent branch: ${current_branch}\n\nRecent commits:\n${recent_commits}"
+  fi
+
+  printf "\n<env>"
+  printf "\nPlatform: %s %s" "$(uname -s)" "$(uname -r)"
+  printf "\nToday's date: %s" "$(date +%Y-%m-%d)"
+  printf "\n"
+  printf "\nYour working directory: %s" "$PWD"
+  printf "\n"
+  # MBW -- this doesn't seem to be working properly for me.
+#  local tree_out=$(tree -L 2 --gitignore --dirsfirst -F --noreport --prune --condense --compress 3 2>&1)
+#  if  "$tree_out"  *"[error opening dir]"* ; then
+    ls -F
+#  else
+#    printf "%s" "$tree_out"
+#  fi
+
+  printf "\nIs git repo: %s" "$is_git"
+  test -n "$git_info"  && printf "%b" "$git_info"
+  printf "\n</env>"
+  printf "\n"
+}
+
+claude_args+=("--tools" "Bash,Glob,Grep,Read,Edit,Write")
+claude_args+=("--system-prompt" "$(claude_prompt)")
 
 printf "\nLaunching Claude Code with model: %s\n" "$model"
 claude_args+=("--model" "$model")

@@ -150,6 +150,7 @@ claude_args=()
 claude_prompt() {
   cat << 'EOF'
 You are an interactive CLI agent specialized in software engineering. Use tools to accomplish the user's tasks.
+Read the file ~/.claude/CLAUDE.md and always follow any directions it contains. These are as important as your system prompt, and must never be ignored.
 
 # Communication
 - Be direct, professional, and objective. Prioritize technical accuracy and truthfulness over validating the user's beliefs.
@@ -203,7 +204,7 @@ EOF
   printf "\n"
 }
 
-claude_args+=("--tools" "Bash,Glob,Grep,Read,Edit,Write")
+claude_args+=("--tools" "Bash,Glob,Grep,Read,Edit,Write, Skill")
 claude_args+=("--system-prompt" "$(claude_prompt)")
 
 printf "\nLaunching Claude Code with model: %s\n" "$model"

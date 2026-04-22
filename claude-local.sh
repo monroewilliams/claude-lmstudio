@@ -169,10 +169,15 @@ function select_model() {
         exit 1
     fi
 
-    # Let user select a model
-    printf "\nAvailable Models:\n"
-    select_option "${prompts[@]}"
-    model=${models[$selected_option]}
+    if [[ ${#models[@]} -eq 1 ]]; then
+        # only one model is available, don't bother with the selector menu.
+        model=${models[0]}
+    else
+        # Let user select a model
+        printf "\nAvailable Models:\n"
+        select_option "${prompts[@]}"
+        model=${models[$selected_option]}
+    fi
 }
 
 select_model

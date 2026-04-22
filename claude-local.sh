@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# LM Studio Model Selector
-# Connects to an LM Studio instance, queries available models,
+# LM Studio/llama-server Model Selector
+# Connects to an LM Studio or llama-server endpoint, queries available models,
 # and launches Claude Code with the selected model.
 
 set -euo pipefail
@@ -16,7 +16,7 @@ function cleanup() {
 
 ERROR="\e[0;31m[Error]\e[0m"
 
-# Set this to the url of your LM Studio instance,
+# Set this to the url of your endpoint,
 # or set LM_STUDIO_BASE_URL in your environment
 export ANTHROPIC_BASE_URL="${LM_STUDIO_BASE_URL:-http://localhost:1234}"
 
@@ -29,15 +29,11 @@ help() {
     cat <<EOF
 claude-local
 
-Connects to an LM Studio instance, queries available models,
+Connects to an LM Studio or llama-server instance, queries available models,
 and launches Claude Code with the selected model.
 
 USAGE:
-    ./claude-local [OPTIONS] [-- CLAUDE_ARGS...]
-
-OPTIONS:
-    -h, --help          Show this help message and exit
-    -u, --url <url>     LM Studio base URL (default: http://localhost:1234)
+    ./claude-local [CLAUDE_ARGS...]
 
 ENVIRONMENT:
     LM_STUDIO_BASE_URL  Override the default LM Studio URL

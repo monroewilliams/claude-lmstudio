@@ -59,10 +59,26 @@ function select_option {
     print_option()     { printf "   $1 "; }
     print_selected()   { printf "  $ESC[7m $1 $ESC[27m"; }
     get_cursor_row()   { IFS=';' read -sdR -p $'\E[6n' ROW COL; echo ${ROW#*[}; }
-    key_input()        { read -s -n3 key 2>/dev/null >&2
-                         if [[ $key = $ESC[A ]]; then echo up;    fi
-                         if [[ $key = $ESC[B ]]; then echo down;  fi
-                         if [[ $key = ""     ]]; then echo enter; fi; }
+    key_input()        { 
+                         read -s -n1 key 2>/dev/null
+                         if [[ $key == $ESC ]]; then
+                             # Escape or escape sequence — try to read the remaining [A / [B in one shot, with 100ms timeout
+                             stty -echo -icanon min 0 time 1
+                             seq=$(dd bs=1 count=2 2>/dev/null)
+                             if [[ "$seq" == '[A' ]]; then
+                                 echo up
+                             elif [[ "$seq" == '[B' ]]; then
+                                 echo down
+                             else
+                                 # Lone escape key (sequence read timed out)
+                                 echo escape;
+                             fi
+                             stty echo icanon 
+                         else
+                             # Got any other character — treat as Enter
+                             echo enter;
+                         fi
+                       }
 
     # initially print empty new lines (scroll down if at bottom of screen)
     for opt in "${options[@]}"; do printf "\n"; done
@@ -96,6 +112,7 @@ function select_option {
                    if [ $selected -lt 0 ]; then selected=$(($# - 1)); fi;;
             down)  ((selected++));
                    if [ $selected -ge $# ]; then selected=0; fi;;
+            escape) cursor_to $lastrow; printf "\n"; cursor_blink_on; cleanup; exit 0;;
         esac
     done
 

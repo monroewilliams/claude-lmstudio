@@ -264,7 +264,11 @@ claude_args+=("--tools" "Bash,Glob,Grep,Read,Edit,Write, Skill")
 claude_args+=("--system-prompt" "$(claude_prompt)")
 
 printf "\nLaunching Claude Code with model: %s\n" "$model"
-claude_args+=("--model" "$model")
+# doing it this way lets you use 1M context, since it will treat it like Opus
+export ANTHROPIC_DEFAULT_OPUS_MODEL="$model"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="$model"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="$model"
+# claude_args+=("--model" "$model")
 
 #echo running claude "${claude_args[@]}" "$@" 
 exec claude "${claude_args[@]}" "$@"

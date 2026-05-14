@@ -270,5 +270,7 @@ export ANTHROPIC_DEFAULT_SONNET_MODEL="$model"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="$model"
 # claude_args+=("--model" "$model")
 
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+
 #echo running claude "${claude_args[@]}" "$@" 
 exec claude "${claude_args[@]}" "$@"

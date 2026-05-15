@@ -16,9 +16,15 @@ function cleanup() {
 
 ERROR="\e[0;31m[Error]\e[0m"
 
-# Set this to the url of your endpoint,
-# or set LM_STUDIO_BASE_URL in your environment
-export ANTHROPIC_BASE_URL="${LM_STUDIO_BASE_URL:-http://localhost:1234}"
+# If ANTHROPIC_BASE_URL is already set in the environment, let it be.
+if [[ -z "${ANTHROPIC_BASE_URL+x}" ]]; then
+    # Set this to the url of your endpoint,
+    # or set CLAUDE_LOCAL_BASE_URL in your environment for this script specifically
+    # (if you don't want to set ANTHROPIC_BASE_URL and confuse claude when not run from here)
+    export ANTHROPIC_BASE_URL="${CLAUDE_LOCAL_BASE_URL:-http://localhost:1234}"
+fi
+
+printf 'using base url: %s\n' "${ANTHROPIC_BASE_URL}"
 
 # This isn't an actual auth token.
 # Claude just needs something in ANTHROPIC_AUTH_TOKEN or it thinks you're not logged in.
@@ -36,11 +42,11 @@ USAGE:
     ./claude-local [CLAUDE_ARGS...]
 
 ENVIRONMENT:
-    LM_STUDIO_BASE_URL  Override the default LM Studio URL
+    CLAUDE_LOCAL_BASE_URL  Override the default endpoint URL
 
 EXAMPLES:
     ./claude-local
-    LM_STUDIO_BASE_URL=http://localhost:5678 ./claude-local
+    CLAUDE_LOCAL_BASE_URL=http://localhost:5678 ./claude-local
 
 EOF
 }
@@ -125,8 +131,7 @@ function select_option {
 }
 
 function select_model() {
-    printf "Using endpoint at %s\n" "$ANTHROPIC_BASE_URL"
-    printf "%s\n" "============================================================"
+#    printf "Using endpoint at %s\n" "$ANTHROPIC_BASE_URL"
 
     # Query available models
     models=()
@@ -201,7 +206,7 @@ select_model
 
 claude_args=()
 
-# Slimmed-down claude system prompt. Taken from:
+# Slimmed-down claude system prompt. Adapted from:
 # https://spicyneuron.substack.com/p/a-mac-studio-for-local-ai-6-months
 claude_prompt() {
   cat << 'EOF'
@@ -273,4 +278,4 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="$model"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
 #echo running claude "${claude_args[@]}" "$@" 
-exec claude "${claude_args[@]}" "$@"
+claude "${claude_args[@]}" "$@"

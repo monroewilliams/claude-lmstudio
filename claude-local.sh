@@ -16,20 +16,30 @@ function cleanup() {
 
 ERROR="\e[0;31m[Error]\e[0m"
 
-# If ANTHROPIC_BASE_URL is already set in the environment, let it be.
-if [[ -z "${ANTHROPIC_BASE_URL+x}" ]]; then
-    # Set this to the url of your endpoint,
-    # or set CLAUDE_LOCAL_BASE_URL in your environment for this script specifically
-    # (if you don't want to set ANTHROPIC_BASE_URL and confuse claude when not run from here)
-    export ANTHROPIC_BASE_URL="${CLAUDE_LOCAL_BASE_URL:-http://localhost:1234}"
+if [[ -n "${CLAUDE_LOCAL_BASE_URL-}" ]]; then
+    # If set, CLAUDE_LOCAL_BASE_URL overrides ANTHROPIC_BASE_URL set in the environment
+    export ANTHROPIC_BASE_URL="${CLAUDE_LOCAL_BASE_URL}"
+elif [[ -n "${ANTHROPIC_BASE_URL-}" ]]; then
+    # ANTHROPIC_BASE_URL was set, leave it alone.
+    true
+else
+    # neither of these were set, use a default endpoint.
+    export ANTHROPIC_BASE_URL="http://localhost:1234"
+fi
+
+if [[ -n "${CLAUDE_LOCAL_AUTH_TOKEN-}" ]]; then
+    # If set, CLAUDE_LOCAL_AUTH_TOKEN overrides ANTHROPIC_AUTH_TOKEN set in the environment
+    export ANTHROPIC_AUTH_TOKEN="${CLAUDE_LOCAL_AUTH_TOKEN}"
+elif [[ -n "${ANTHROPIC_AUTH_TOKEN-}" ]]; then
+    # ANTHROPIC_AUTH_TOKEN was set, leave it alone.
+    true
+else
+    # claude needs ANTHROPIC_AUTH_TOKEN to be non-empty, or it will think you're not logged in.
+    # This isn't an actual auth token. Extra points if you get this reference. ;)
+    export ANTHROPIC_AUTH_TOKEN="swordfish"
 fi
 
 printf 'using base url: %s\n' "${ANTHROPIC_BASE_URL}"
-
-# This isn't an actual auth token.
-# Claude just needs something in ANTHROPIC_AUTH_TOKEN or it thinks you're not logged in.
-# Extra points if you get this reference. ;)
-export ANTHROPIC_AUTH_TOKEN="swordfish"
 
 help() {
     cat <<EOF
@@ -43,11 +53,12 @@ USAGE:
 
 ENVIRONMENT:
     CLAUDE_LOCAL_BASE_URL  Override the default endpoint URL
-
+    CLAUDE_LOCAL_AUTH_TOKEN Provide an auth token for the endpoint
+    
 EXAMPLES:
     ./claude-local
     CLAUDE_LOCAL_BASE_URL=http://localhost:5678 ./claude-local
-
+    
 EOF
 }
 

@@ -7,7 +7,7 @@ A script to connect to an LM Studio or llama-server endpoint, query available mo
 - Bash (macOS or Linux)
 - `curl`
 - `jq`
-- LM Studio/llama-server running locally (default: http://localhost:1234)
+- LM Studio/llama-server/oMLX running locally (default: http://localhost:1234)
 - Claude Code installed
 
 ## Installation
@@ -17,8 +17,8 @@ A script to connect to an LM Studio or llama-server endpoint, query available mo
    ```bash
    chmod +x claude-local.sh
    ```
-3. Optionally, rename/install it somewhere in your `$PATH`
-	(I have it as `~/bin/claude-local`)
+3. Optionally, rename/install it somewhere in your `$PATH`, or make a symlink that's in your `$PATH` that points to it
+	(I have it symlinked as `~/bin/claude-local`)
 	
 ## Usage
 
@@ -48,12 +48,14 @@ and have been tuning it to my own preferences. See the script content for detail
 The script automatically sets these environment variables when launching Claude Code:
 - `ANTHROPIC_BASE_URL`: Points to your LM Studio instance
 - `ANTHROPIC_AUTH_TOKEN`: Set to "swordfish" (required for Claude Code to recognize the session)
+If you have `CLAUDE_LOCAL_BASE_URL` or `CLAUDE_LOCAL_AUTH_TOKEN` set in your environment, those will override 
+the `ANTHROPIC` versions. If neither is set you get the script's hardcoded defaults.
 
 ## Configuration
 
 The script connects to an endpoint at `http://localhost:1234` by default. You can configure this in two ways:
 
-1. **Environment variable**: Set `LM_STUDIO_BASE_URL` in your environment
+1. **Environment variable**: Set `CLAUDE_LOCAL_BASE_URL` or `ANTHROPIC_BASE_URL` in your environment
 2. **Script variable**: Edit the default used when setting up the `ANTHROPIC_BASE_URL` variable in the script
 
 Example:

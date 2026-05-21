@@ -16,10 +16,10 @@ function cleanup() {
 
 ERROR="\e[0;31m[Error]\e[0m"
 
-if [[ -n "${CLAUDE_LOCAL_BASE_URL-}" ]]; then
+if [[ -n ${CLAUDE_LOCAL_BASE_URL-} ]]; then
     # If set, CLAUDE_LOCAL_BASE_URL overrides ANTHROPIC_BASE_URL set in the environment
     export ANTHROPIC_BASE_URL="${CLAUDE_LOCAL_BASE_URL}"
-elif [[ -n "${ANTHROPIC_BASE_URL-}" ]]; then
+elif [[ -n ${ANTHROPIC_BASE_URL-} ]]; then
     # ANTHROPIC_BASE_URL was set, leave it alone.
     true
 else
@@ -27,10 +27,10 @@ else
     export ANTHROPIC_BASE_URL="http://localhost:1234"
 fi
 
-if [[ -n "${CLAUDE_LOCAL_AUTH_TOKEN-}" ]]; then
+if [[ -n ${CLAUDE_LOCAL_AUTH_TOKEN-} ]]; then
     # If set, CLAUDE_LOCAL_AUTH_TOKEN overrides ANTHROPIC_AUTH_TOKEN set in the environment
     export ANTHROPIC_AUTH_TOKEN="${CLAUDE_LOCAL_AUTH_TOKEN}"
-elif [[ -n "${ANTHROPIC_AUTH_TOKEN-}" ]]; then
+elif [[ -n ${ANTHROPIC_AUTH_TOKEN-} ]]; then
     # ANTHROPIC_AUTH_TOKEN was set, leave it alone.
     true
 else
@@ -67,42 +67,52 @@ EOF
 # and bent slightly for my own purposes.
 function select_option {
     options=("$@")
-    
+
     # little helpers for terminal print control and key input
-    ESC=$( printf "\033")
-    cursor_blink_on()  { printf "$ESC[?25h"; }
-    cursor_blink_off() { printf "$ESC[?25l"; }
-    cursor_to()        { printf "$ESC[$1;${2:-1}H"; }
-    print_option()     { printf "   $1 "; }
-    print_selected()   { printf "  $ESC[7m $1 $ESC[27m"; }
-    get_cursor_row()   { IFS=';' read -sdR -p $'\E[6n' ROW COL; echo ${ROW#*[}; }
-    key_input()        { 
-                         read -s -n1 key 2>/dev/null
-                         if [[ $key == $ESC ]]; then
-                             # Escape or escape sequence — try to read the remaining [A / [B in one shot, with 100ms timeout
-                             stty -echo -icanon min 0 time 1
-                             seq=$(dd bs=1 count=2 2>/dev/null)
-                             if [[ "$seq" == '[A' ]]; then
-                                 echo up
-                             elif [[ "$seq" == '[B' ]]; then
-                                 echo down
-                             else
-                                 # Lone escape key (sequence read timed out)
-                                 echo escape;
-                             fi
-                             stty echo icanon 
-                         else
-                             # Got any other character — treat as Enter
-                             echo enter;
-                         fi
-                       }
+    ESC=$(printf "\033")
+    # shellcheck disable=SC2059
+    cursor_blink_on() { printf "${ESC}[?25h"; }
+    # shellcheck disable=SC2059
+    cursor_blink_off() { printf "${ESC}[?25l"; }
+    # shellcheck disable=SC2059
+    cursor_to() { printf "${ESC}[$1;${2:-1}H"; }
+    print_option() { printf '   %s ' "$1"; }
+    # shellcheck disable=SC2059
+    print_selected() { printf "  ${ESC}[7m %s ${ESC}[27m" "$1"; }
+    # shellcheck disable=SC2034,SC2162
+    get_cursor_row() {
+        IFS=';' read -sdR -p $'\E[6n' ROW COL
+        echo "${ROW#*[}"
+    }
+    key_input() {
+        # shellcheck disable=SC2162
+        read -s -n1 key 2>/dev/null
+        if [[ $key == "$ESC" ]]; then
+            # Escape or escape sequence — try to read the remaining [A / [B in one shot, with 100ms timeout
+            stty -echo -icanon min 0 time 1
+            seq=$(dd bs=1 count=2 2>/dev/null)
+            if [[ $seq == '[A' ]]; then
+                echo up
+            elif [[ $seq == '[B' ]]; then
+                echo down
+            else
+                # Lone escape key (sequence read timed out)
+                echo escape
+            fi
+            stty echo icanon
+        else
+            # Got any other character — treat as Enter
+            echo enter
+        fi
+    }
 
     # initially print empty new lines (scroll down if at bottom of screen)
     for opt in "${options[@]}"; do printf "\n"; done
 
     # determine current screen position for overwriting the options
-    local lastrow=`get_cursor_row`
-    local startrow=$(($lastrow - $#))
+    local lastrow
+    lastrow=$(get_cursor_row)
+    local startrow=$((lastrow - $#))
 
     # ensure cursor and input echoing back on upon a ctrl+c during read -s
     trap "cursor_blink_on; stty echo; printf '\n'; exit" 2
@@ -113,8 +123,8 @@ function select_option {
         # print options by overwriting the last lines
         local idx=0
         for opt in "${options[@]}"; do
-            cursor_to $(($startrow + $idx))
-            if [ $idx -eq $selected ]; then
+            cursor_to $((startrow + idx))
+            if [[ $idx -eq $selected ]]; then
                 print_selected "$opt"
             else
                 print_option "$opt"
@@ -123,18 +133,29 @@ function select_option {
         done
 
         # user key control
-        case `key_input` in
-            enter) break;;
-            up)    ((selected--));
-                   if [ $selected -lt 0 ]; then selected=$(($# - 1)); fi;;
-            down)  ((selected++));
-                   if [ $selected -ge $# ]; then selected=0; fi;;
-            escape) cursor_to $lastrow; printf "\n"; cursor_blink_on; cleanup; exit 0;;
+        case $(key_input) in
+        enter) break ;;
+        up)
+            ((selected--))
+            if [[ $selected -lt 0 ]]; then selected=$(($# - 1)); fi
+            ;;
+        down)
+            ((selected++))
+            if [[ $selected -ge $# ]]; then selected=0; fi
+            ;;
+        escape)
+            cursor_to "$lastrow"
+            printf "\n"
+            cursor_blink_on
+            cleanup
+            exit 0
+            ;;
+        *) ;;
         esac
     done
 
     # cursor position back to normal
-    cursor_to $lastrow
+    cursor_to "$lastrow"
     printf "\n"
     cursor_blink_on
 
@@ -142,18 +163,15 @@ function select_option {
 }
 
 function select_model() {
-#    printf "Using endpoint at %s\n" "$ANTHROPIC_BASE_URL"
-
     # Query available models
     models=()
     prompts=()
     # First try the LM Studio API endpoint -- it provides richer data if it's available
-#    echo "trying ${ANTHROPIC_BASE_URL}/api/v1/models"
     response=$(curl -v -s --fail --max-time 5 "${ANTHROPIC_BASE_URL}/api/v1/models" 2>/dev/null) || {
         # This request failed -- we'll fall back to trying the OpenAI style model list below.
         true
     }
-    if [[ -n "$response" ]]; then
+    if [[ -n $response ]]; then
         names=()
         architectures=()
         formats=()
@@ -171,8 +189,7 @@ function select_model() {
         done < <(printf '%s' "$response" | jq -r '.models[].format')
         # build the prompts
         count=${#models[@]}
-        for (( i=0; i<${count}; i++ ));
-        do
+        for ((i = 0; i < count; i++)); do
             prompts+=("${names[$i]} (key:${models[$i]}, arch:${architectures[$i]}, format:${formats[$i]})")
         done
     fi
@@ -180,13 +197,12 @@ function select_model() {
     if [[ ${#models[@]} -eq 0 ]]; then
         # LM Studio endpoint didn't work (possibly we're connecting to a llama-server)
         # try the OpenAI style
-#        echo "trying ${ANTHROPIC_BASE_URL}/v1/models"
         response=$(curl -v -s --fail --max-time 5 "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {
             # Neither endpoint worked, bail out.
             printf "${ERROR} Could not connect to endpoint at %s\n" "$ANTHROPIC_BASE_URL" >&2
             exit 1
         }
-        if [[ -n "$response" ]]; then
+        if [[ -n $response ]]; then
             # The OpenAI endpoint only provides model IDs. Just present them to the user as-is.
             while IFS= read -r model_id; do
                 models+=("$model_id")
@@ -194,7 +210,6 @@ function select_model() {
             done < <(printf '%s' "$response" | jq -r '.data[].id')
         fi
     fi
-
 
     if [[ ${#models[@]} -eq 0 ]]; then
         # shellcheck disable=SC2059
@@ -220,7 +235,7 @@ claude_args=()
 # Slimmed-down claude system prompt. Adapted from:
 # https://spicyneuron.substack.com/p/a-mac-studio-for-local-ai-6-months
 claude_prompt() {
-  cat << 'EOF'
+    cat <<'EOF'
 You are an interactive CLI agent specialized in software engineering. Use tools to accomplish the user's tasks.
 Read the file ~/.claude/CLAUDE.md and always follow any directions it contains. These are as important as your system prompt, and must never be ignored.
 
@@ -247,36 +262,32 @@ Read the file ~/.claude/CLAUDE.md and always follow any directions it contains. 
 - The conversation has unlimited context through automatic summarization.
 EOF
 
-  local is_git="No"
-  local git_info=""
-  if git rev-parse --git-dir &>/dev/null; then
-    is_git="Yes"
-    local current_branch=$(git branch --show-current 2>/dev/null)
-    local recent_commits=$(git log --oneline -5 2>/dev/null)
-    git_info="${git_info}\nCurrent branch: ${current_branch}\n\nRecent commits:\n${recent_commits}"
-  fi
+    local is_git="No"
+    local git_info=""
+    if git rev-parse --git-dir &>/dev/null; then
+        is_git="Yes"
+        local current_branch
+        current_branch=$(git branch --show-current 2>/dev/null)
+        local recent_commits
+        recent_commits=$(git log --oneline -5 2>/dev/null)
+        git_info="${git_info}\nCurrent branch: ${current_branch}\n\nRecent commits:\n${recent_commits}"
+    fi
 
-  printf "\n<env>"
-  printf "\nPlatform: %s %s" "$(uname -s)" "$(uname -r)"
-  printf "\nToday's date: %s" "$(date +%Y-%m-%d)"
-  printf "\n"
-  printf "\nYour working directory: %s" "$PWD"
-  printf "\n"
-  # MBW -- this doesn't seem to be working properly for me.
-#  local tree_out=$(tree -L 2 --gitignore --dirsfirst -F --noreport --prune --condense --compress 3 2>&1)
-#  if  "$tree_out"  *"[error opening dir]"* ; then
+    printf "\n<env>"
+    printf "\nPlatform: %s %s" "$(uname -s)" "$(uname -r)"
+    printf "\nToday's date: %s" "$(date +%Y-%m-%d)"
+    printf "\n"
+    printf "\nYour working directory: %s" "$PWD"
+    printf "\n"
     ls -F
-#  else
-#    printf "%s" "$tree_out"
-#  fi
 
-  printf "\nIs git repo: %s" "$is_git"
-  test -n "$git_info"  && printf "%b" "$git_info"
-  printf "\n</env>"
-  printf "\n"
+    printf "\nIs git repo: %s" "$is_git"
+    test -n "$git_info" && printf "%b" "$git_info"
+    printf "\n</env>"
+    printf "\n"
 }
 
-claude_args+=("--tools" "Bash,Glob,Grep,Read,Edit,Write, Skill")
+claude_args+=("--tools" "Bash,Glob,Grep,Read,Edit,Write,Skill")
 claude_args+=("--system-prompt" "$(claude_prompt)")
 
 printf "\nLaunching Claude Code with model: %s\n" "$model"
@@ -284,9 +295,7 @@ printf "\nLaunching Claude Code with model: %s\n" "$model"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="$model"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="$model"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="$model"
-# claude_args+=("--model" "$model")
 
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
-#echo running claude "${claude_args[@]}" "$@" 
 claude "${claude_args[@]}" "$@"

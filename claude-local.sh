@@ -167,7 +167,10 @@ function select_model() {
     models=()
     prompts=()
     # First try the LM Studio API endpoint -- it provides richer data if it's available
-    response=$(curl -v -s --fail --max-time 5 "${ANTHROPIC_BASE_URL}/api/v1/models" 2>/dev/null) || {
+    response=$(curl -v -s --fail --max-time 5 \
+        -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" \
+        "${ANTHROPIC_BASE_URL}/api/v1/models" \
+        2>/dev/null) || {
         # This request failed -- we'll fall back to trying the OpenAI style model list below.
         true
     }
@@ -197,7 +200,10 @@ function select_model() {
     if [[ ${#models[@]} -eq 0 ]]; then
         # LM Studio endpoint didn't work (possibly we're connecting to a llama-server)
         # try the OpenAI style
-        response=$(curl -v -s --fail --max-time 5 "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {
+        response=$(curl -v -s --fail --max-time 5 \
+            -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" \
+            "${ANTHROPIC_BASE_URL}/v1/models" \
+            2>/dev/null) || {
             # Neither endpoint worked, bail out.
             printf "${ERROR} Could not connect to endpoint at %s\n" "$ANTHROPIC_BASE_URL" >&2
             exit 1

@@ -32,3 +32,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Reformatted with `shfmt -i 4 -w`: consistent 4-space indentation, `case`
   arms on separate lines, minor whitespace normalisation
+- Both `curl` model-list requests (LM Studio `/api/v1/models` and OpenAI-style
+  `/v1/models`) now send an `Authorization: Bearer` header using
+  `ANTHROPIC_AUTH_TOKEN`, supporting token-authenticated endpoints in addition
+  to the previous IP-restricted access model

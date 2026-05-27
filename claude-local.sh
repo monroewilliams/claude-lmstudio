@@ -70,15 +70,15 @@ function select_option {
     
     # little helpers for terminal print control and key input
     ESC=$( printf "\033")
-    cursor_blink_on()  { printf "$ESC[?25h"; }
-    cursor_blink_off() { printf "$ESC[?25l"; }
-    cursor_to()        { printf "$ESC[$1;${2:-1}H"; }
+    cursor_blink_on()  { printf "${ESC}[?25h"; }
+    cursor_blink_off() { printf "${ESC}[?25l"; }
+    cursor_to()        { printf "${ESC}[$1;${2:-1}H"; }
     print_option()     { printf "   $1 "; }
-    print_selected()   { printf "  $ESC[7m $1 $ESC[27m"; }
+    print_selected()   { printf "  ${ESC}[7m $1 ${ESC}[27m"; }
     get_cursor_row()   { IFS=';' read -sdR -p $'\E[6n' ROW COL; echo ${ROW#*[}; }
     key_input()        { 
                          read -s -n1 key 2>/dev/null
-                         if [[ $key == $ESC ]]; then
+                         if [[ $key == ${ESC} ]]; then
                              # Escape or escape sequence — try to read the remaining [A / [B in one shot, with 100ms timeout
                              stty -echo -icanon min 0 time 1
                              seq=$(dd bs=1 count=2 2>/dev/null)
@@ -134,7 +134,7 @@ function select_option {
     done
 
     # cursor position back to normal
-    cursor_to $lastrow
+    cursor_to "$lastrow"
     printf "\n"
     cursor_blink_on
 
@@ -171,7 +171,7 @@ function select_model() {
         done < <(printf '%s' "$response" | jq -r '.models[].format')
         # build the prompts
         count=${#models[@]}
-        for (( i=0; i<${count}; i++ ));
+        for (( i=0; i<count; i++ ));
         do
             prompts+=("${names[$i]} (key:${models[$i]}, arch:${architectures[$i]}, format:${formats[$i]})")
         done

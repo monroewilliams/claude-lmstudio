@@ -33,13 +33,24 @@ if [[ -n "${CLAUDE_LOCAL_AUTH_TOKEN-}" ]]; then
 elif [[ -n "${ANTHROPIC_AUTH_TOKEN-}" ]]; then
     # ANTHROPIC_AUTH_TOKEN was set, leave it alone.
     true
-else
+elif [ "$(uname)" = "Darwin" ] && command -v security >/dev/null 2>&1; then
+    # No auth token from environment variables, and we're on macOS.
+    # Check for a key in an unlocked keychain with a username matching the base url.
+    KEYCHAIN_AUTH_TOKEN=$(security find-generic-password -s "claude-local" -a "${ANTHROPIC_BASE_URL}" -w 2>/dev/null || true)
+    if [[ -n "${KEYCHAIN_AUTH_TOKEN-}" ]]; then
+        export ANTHROPIC_AUTH_TOKEN="${KEYCHAIN_AUTH_TOKEN}"
+    fi
+fi
+
+if [[ -z "${ANTHROPIC_AUTH_TOKEN-}" ]]; then
     # claude needs ANTHROPIC_AUTH_TOKEN to be non-empty, or it will think you're not logged in.
     # This isn't an actual auth token. Extra points if you get this reference. ;)
     export ANTHROPIC_AUTH_TOKEN="swordfish"
 fi
 
 printf 'using base url: %s\n' "${ANTHROPIC_BASE_URL}"
+# useful when debugging the script, but exposes the auth token.
+#printf 'using auth token: %s\n' "${ANTHROPIC_AUTH_TOKEN}"
 
 help() {
     cat <<EOF
@@ -178,7 +189,7 @@ function select_model() {
     fi
 
     if [[ ${#models[@]} -eq 0 ]]; then
-        # LM Studio endpoint didn't work (possibly we're connecting to a llama-server)
+        # LM Studio endpoint didn't work (we're probably connecting to a different inference server)
         # try the OpenAI style
 #        echo "trying ${ANTHROPIC_BASE_URL}/v1/models"
         response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {

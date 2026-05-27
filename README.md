@@ -64,6 +64,22 @@ export LM_STUDIO_BASE_URL="http://localhost:8080"
 ./claude-local.sh
 ```
 
+The auth token can be set similarly by setting `CLAUDE_LOCAL_AUTH_TOKEN` or `ANTHROPIC_AUTH_TOKEN` in your environment.
+
+Additionally, if you're on macOS you can add the auth token to your keychain, and the script will read it directly
+as long as the keychain is unlocked (which it normally would be while you're logged in). It looks for an entry with a username
+matching the computed base url, so if you use the script with different base urls you can have a keychain entry for each
+and they shouldn't collide.
+
+To add the key (be sure the url exactly matches your `ANTHROPIC_BASE_URL`, it's a plain string match):
+```bash
+security add-generic-password -s "claude-local" -a "http://localhost:1234" -w "auth-token-text"
+```
+and if you later want to delete it, use:
+```bash
+security delete-generic-password -s "claude-local" -a "http://localhost:1234"
+```
+
 ## Troubleshooting
 
 - **Command not found**: Ensure you have `curl` and `jq` installed.

@@ -80,6 +80,9 @@ and if you later want to delete it, use:
 security delete-generic-password -s "claude-local" -a "http://localhost:1234"
 ```
 
+If the `CLAUDE_LOCAL_MODEL` variable is set in the environment, the script will not query the model list or prompt to select a model,
+and will just launch claude with the specified model ID.
+
 ## Troubleshooting
 
 - **Command not found**: Ensure you have `curl` and `jq` installed.

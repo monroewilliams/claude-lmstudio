@@ -224,7 +224,10 @@ function select_model() {
     fi
 }
 
-select_model
+if [[ -z "${CLAUDE_LOCAL_MODEL-}" ]]; then
+    select_model
+    CLAUDE_LOCAL_MODEL="$model"
+fi
 
 claude_args=()
 
@@ -290,11 +293,11 @@ EOF
 claude_args+=("--tools" "Bash,Glob,Grep,Read,Edit,Write, Skill")
 claude_args+=("--system-prompt" "$(claude_prompt)")
 
-printf "\nLaunching Claude Code with model: %s\n" "$model"
+printf "\nLaunching Claude Code with model: %s\n" "${CLAUDE_LOCAL_MODEL}"
 # doing it this way lets you use 1M context, since it will treat it like Opus
-export ANTHROPIC_DEFAULT_OPUS_MODEL="$model"
-export ANTHROPIC_DEFAULT_SONNET_MODEL="$model"
-export ANTHROPIC_DEFAULT_HAIKU_MODEL="$model"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="${CLAUDE_LOCAL_MODEL}"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="${CLAUDE_LOCAL_MODEL}"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="${CLAUDE_LOCAL_MODEL}"
 # claude_args+=("--model" "$model")
 
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1

@@ -178,7 +178,7 @@ function models_omlx() {
         # case-insensitive sort
         sorted=$(echo "$lines" | sort -f)
         IFS=$'\n' models=($(echo "$lines" | awk -F',' '{print $1}'))
-        IFS=$'\n' prompts=($(echo "$lines" | awk -F',' '{printf "%s   (loaded:%s, type:%s window:%d)\n", $1, $4, $3, $2}'))
+        IFS=$'\n' prompts=($(echo "$lines" | awk -F',' '{printf "%s%s (type:%s window:%d)\n", ($4 == "true")?"✅ ":"   ", $1, $3, $2}'))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"

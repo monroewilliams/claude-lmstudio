@@ -162,16 +162,23 @@ function models_omlx() {
         # This request failed -- response being empty will do the right thing below.
         true
     }
-    health=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/health" 2>/dev/null) || {
+    status=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/api/status" 2>/dev/null) || {
         # This request failed
         true
     }
     if [[ -n "$response" ]]; then
-        # output health check info
-        # jq -r <<<"${health}"
+        # output status info
+        # jq -r <<<"${status}"
+
+        DEFAULT_MODEL=$(jq -r '.default_model' <<<"${status}")
+        LOADED_COUNT=$(jq -r '.models_loaded' <<<"${status}")
+        DISCOVERED_COUNT=$(jq -r '.models_discovered' <<<"${status}")
+        MEM_USED=$(jq -r '.model_memory_used_formatted' <<<"${status}")
+        MEM_TOTAL=$(jq -r '.model_memory_max_formatted' <<<"${status}")
         
-        # extract the default model from the health check
-        printf "default model: %s" $(jq -r '.default_model' <<<"${health}")
+        # printf "default model: %s\n" "${DEFAULT_MODEL}"
+        printf "oMLX: %s/%s loaded, using %s of %s" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
+        
         
         # oMLX endpoint provides some rich data
         lines=$(echo "$response" | jq -r '.models[] | [.id, .max_context_window, .config_model_type, .loaded, .estimated_size] | join(",")')

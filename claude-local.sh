@@ -152,6 +152,78 @@ function select_option {
     selected_option=$selected
 }
 
+models=()
+prompts=()
+
+function models_omlx() {
+    # Read models from the oMLX models/status endpoint
+    # echo "trying ${ANTHROPIC_BASE_URL}/v1/models/status"
+    response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/v1/models/status" 2>/dev/null) || {
+        # This request failed -- response being empty will do the right thing below.
+        true
+    }
+    health=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/health" 2>/dev/null) || {
+        # This request failed
+        true
+    }
+    if [[ -n "$response" ]]; then
+        # output health check info
+        # jq -r <<<"${health}"
+        
+        # extract the default model from the health check
+        printf "default model: %s" $(jq -r '.default_model' <<<"${health}")
+        
+        # oMLX endpoint provides some rich data
+        lines=$(echo "$response" | jq -r '.models[] | [.id, .max_context_window, .config_model_type, .loaded] | join(",")')
+        # case-insensitive sort
+        sorted=$(echo "$lines" | sort -f)
+        IFS=$'\n' models=($(echo "$lines" | awk -F',' '{print $1}'))
+        IFS=$'\n' prompts=($(echo "$lines" | awk -F',' '{printf "%s   (loaded:%s, type:%s window:%d)\n", $1, $4, $3, $2}'))
+        
+#        printf 'models: %s\n' "${models[@]}"
+#        printf 'prompts: %s\n' "${prompts[@]}"
+
+    fi
+}
+
+function models_lmstudio() {
+    # Read models from the LM Studio models endpoint
+    # echo "trying ${ANTHROPIC_BASE_URL}/api/v1/models"
+    response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/api/v1/models" 2>/dev/null) || {
+        # This request failed -- response being empty will do the right thing below.
+        true
+    }
+    if [[ -n "$response" ]]; then
+        # LM Studio endpoint provides some rich data
+        lines=$(echo "$response" | jq -r '.models[] | [.key, .display_name, .architecture, .format] | join(",")')
+        # case-insensitive sort
+        sorted=$(echo "$lines" | sort -f)
+        IFS=$'\n' models=($(echo "$lines" | awk -F',' '{print $1}'))
+        IFS=$'\n' prompts=($(echo "$lines" | awk -F',' '{printf "%s   (key:%s, arch:%s, format:%s)\n", $2, $2, $3, $4}'))
+        
+#        printf 'models: %s\n' "${models[@]}"
+#        printf 'prompts: %s\n' "${prompts[@]}"
+
+    fi
+}
+
+function models_openai() {
+    # Read models from OpenAI-format endpoint
+    # echo "trying ${ANTHROPIC_BASE_URL}/v1/models"
+    response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {
+        # Neither endpoint worked, bail out.
+        printf "${ERROR} Could not connect to endpoint at %s\n" "$ANTHROPIC_BASE_URL" >&2
+        exit 1
+    }
+#    printf "response is %s", "$response"
+    if [[ -n "$response" ]]; then
+        # The OpenAI endpoint only provides model IDs. Just present them to the user as-is.
+        lines=$(echo "$response" | jq -r '.data[] | .id')
+        IFS=$'\n' models=($lines)
+        prompts=("${models[@]}")
+    fi
+}
+
 function select_model() {
 #    printf "Using endpoint at %s\n" "$ANTHROPIC_BASE_URL"
 
@@ -160,93 +232,21 @@ function select_model() {
     prompts=()
 
     if [[ ${#models[@]} -eq 0 ]]; then
-        # First try the oMLX endpoint 
-#        echo "trying ${ANTHROPIC_BASE_URL}/api/v1/models"
-        response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/v1/models/status" 2>/dev/null) || {
-            # This request failed -- we'll fall back to trying the OpenAI style model list below.
-            true
-        }
-        if [[ -n "$response" ]]; then
-            windows=()
-            architectures=()
-            formats=()
-            sizes=()
-            sort=()
-            while IFS= read -r s; do
-                models+=("$s")
-            done < <(printf '%s' "$response" | jq -r '.models[].id')
-            while IFS= read -r s; do
-                windows+=("$s")
-            done < <(printf '%s' "$response" | jq -r '.models[].max_context_window')
-            while IFS= read -r s; do
-                architectures+=("$s")
-            done < <(printf '%s' "$response" | jq -r '.models[].config_model_type')
-            while IFS= read -r s; do
-                sizes+=("$s")
-            done < <(printf '%s' "$response" | jq -r '.models[].estimated_size')
-            # build the prompts
-            count=${#models[@]}
-            for (( i=0; i<count; i++ ));
-            do
-#                prompts+=("${models[$i]} (window:${windows[$i]}, size:${sizes[$i]}, arch:${architectures[$i]})")
-                prompts+=("${models[$i]}    (arch:${architectures[$i]}), window:${windows[$i]}")
-            done
-        fi
+        # First try the oMLX endpoint
+        models_omlx
     fi
 
     if [[ ${#models[@]} -eq 0 ]]; then
-        # Next try the LM Studio API endpoint -- it provides richer data if it's available
-#        echo "trying ${ANTHROPIC_BASE_URL}/api/v1/models"
-        response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/api/v1/models" 2>/dev/null) || {
-            # This request failed -- we'll fall back to trying the OpenAI style model list below.
-            true
-        }
-        if [[ -n "$response" ]]; then
-            names=()
-            architectures=()
-            formats=()
-            while IFS= read -r model_id; do
-                models+=("$model_id")
-            done < <(printf '%s' "$response" | jq -r '.models[].key')
-            while IFS= read -r model_id; do
-                names+=("$model_id")
-            done < <(printf '%s' "$response" | jq -r '.models[].display_name')
-            while IFS= read -r model_id; do
-                architectures+=("$model_id")
-            done < <(printf '%s' "$response" | jq -r '.models[].architecture')
-            while IFS= read -r model_id; do
-                formats+=("$model_id")
-            done < <(printf '%s' "$response" | jq -r '.models[].format')
-            # build the prompts
-            count=${#models[@]}
-            for (( i=0; i<count; i++ ));
-            do
-                prompts+=("${names[$i]} (key:${models[$i]}, arch:${architectures[$i]}, format:${formats[$i]})")
-            done
-        fi
+        # If that didn't find anything, try the lmstudio endpoint
+        models_lmstudio
     fi
 
     if [[ ${#models[@]} -eq 0 ]]; then
-        # Neither of those worked.
-        # try the OpenAI style
-#        echo "trying ${ANTHROPIC_BASE_URL}/v1/models"
-        response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {
-            # Neither endpoint worked, bail out.
-            printf "${ERROR} Could not connect to endpoint at %s\n" "$ANTHROPIC_BASE_URL" >&2
-            exit 1
-        }
-        if [[ -n "$response" ]]; then
-            # The OpenAI endpoint only provides model IDs. Just present them to the user as-is.
-            while IFS= read -r model_id; do
-                models+=("$model_id")
-                prompts+=("$model_id")
-            done < <(printf '%s' "$response" | jq -r '.data[].id')
-        fi
+        # Neither of those worked, fall back to the OpenAI endpoint.
+        models_openai
     fi
 
-
     if [[ ${#models[@]} -eq 0 ]]; then
-        # shellcheck disable=SC2059
         printf "${ERROR} No models found.\n" >&2
         exit 1
     fi

@@ -46,10 +46,10 @@ and have been tuning it to my own preferences. See the script content for detail
 ### Environment Variables
 
 The script automatically sets these environment variables when launching Claude Code:
-- `ANTHROPIC_BASE_URL`: Points to your LM Studio instance
-- `ANTHROPIC_AUTH_TOKEN`: Set to "swordfish" (required for Claude Code to recognize the session)
+- `ANTHROPIC_BASE_URL`: Base URL of the http/https endpoint it will connect to
+- `ANTHROPIC_AUTH_TOKEN`: Bearer token for authentication to the endpoint
 If you have `CLAUDE_LOCAL_BASE_URL` or `CLAUDE_LOCAL_AUTH_TOKEN` set in your environment, those will override 
-the `ANTHROPIC` versions. If neither is set you get the script's hardcoded defaults.
+the `ANTHROPIC` versions, as described in detail below.
 
 ## Configuration
 
@@ -60,7 +60,7 @@ The script connects to an endpoint at `http://localhost:1234` by default. You ca
 
 Example:
 ```bash
-export LM_STUDIO_BASE_URL="http://localhost:8080"
+export CLAUDE_LOCAL_BASE_URL="http://localhost:8080"
 ./claude-local.sh
 ```
 
@@ -68,7 +68,7 @@ The auth token can be set similarly by setting `CLAUDE_LOCAL_AUTH_TOKEN` or `ANT
 
 Additionally, if you're on macOS you can add the auth token to your keychain, and the script will read it directly
 as long as the keychain is unlocked (which it normally would be while you're logged in). It looks for an entry with a username
-matching the computed base url, so if you use the script with different base urls you can have a keychain entry for each
+matching the base url, so if you use the script with different base urls you can have a keychain entry for each
 and they shouldn't collide.
 
 To add the key (be sure the url exactly matches your `ANTHROPIC_BASE_URL`, it's a plain string match):
@@ -104,6 +104,39 @@ Available Models:
    Glm 4.7 Flash (key:zai-org/glm-4.7-flash, arch:glm4_moe_lite, format:mlx) 
 
 
-Launching Claude Code with model: qwen3.6-27b-ud-mlx
+Launching with model: qwen3.6-27b-ud-mlx
 
 ```
+
+## Extra Features
+
+The script will attempt to use specific model-listing endpoints provided by oMLX and LM Studio to provide richer information. 
+(If those aren't available at the base URL it will fall back to the generic OpenAI-standard `/v1/models` endpoint.)
+
+Under oMLX it will look something like this (models that are currently loaded are marked with ✅):
+
+``` 
+$ claude-local
+using base url: http://localhost:1234
+oMLX: 1/3 loaded, 0 loading, using 36.89GB of 107.52GB
+Available Models:
+      GLM-4.7-Flash-MLX-8bit (type:glm4_moe_lite window:198k, size:31.1G) 
+      gpt-oss-20b-MXFP4-Q8 (type:gpt_oss window:128k, size:11.8G) 
+   ✅ Qwen3.6-35B-A3B-MLX-8bit (type:qwen3_5_moe window:256k, size:36.9G) 
+```
+
+and LM Studio will look like this:
+
+```
+$ claude-local
+using base url: http://127.0.0.1:12345
+
+Available Models:
+      Glm 4.7 Flash (key:zai-org/glm-4.7-flash, arch:glm4_moe_lite, format:mlx) 
+      GPT-OSS 20B (key:openai/gpt-oss-20b, arch:gpt-oss, format:gguf) 
+   ✅ Qwen3.6 35B A3B (key:qwen3.6-35b-a3b-mlx, arch:qwen3_5_moe, format:mlx) 
+```
+
+While connected to oMLX or LM Studio, it can also load and unload models directly from the menu (using the `l` and `u` or `x` keys, respectively).
+
+With oMLX, unload will only work if you're authenticating with the main "administrative" API key -- sub-keys aren't authorized on the unload endpoint. 

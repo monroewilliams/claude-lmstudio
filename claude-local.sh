@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-trap 'printf "${ERROR} at or near line %s:\n\t%s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
+trap 'stty sane; printf "${ERROR} at or near line %s:\n\t%s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
@@ -75,7 +75,7 @@ EOF
 
 # Interactive menu implementation, taken from:
 # https://unix.stackexchange.com/questions/146570/arrow-key-enter-menu
-# and bent slightly for my own purposes.
+# and bent quite a bit for my own purposes.
 function select_option {
     options=("$@")
     
@@ -88,24 +88,28 @@ function select_option {
     print_selected()   { printf "  ${ESC}[7m $1 ${ESC}[27m"; }
     get_cursor_row()   { IFS=';' read -sdR -p $'\E[6n' ROW COL; echo ${ROW#*[}; }
     key_input()        { 
-                         read -s -n1 key 2>/dev/null
-                         if [[ $key == ${ESC} ]]; then
-                             # Escape or escape sequence — try to read the remaining [A / [B in one shot, with 100ms timeout
-                             stty -echo -icanon min 0 time 1
-                             seq=$(dd bs=1 count=2 2>/dev/null)
-                             if [[ "$seq" == '[A' ]]; then
-                                 echo up
-                             elif [[ "$seq" == '[B' ]]; then
-                                 echo down
-                             else
-                                 # Lone escape key (sequence read timed out)
-                                 echo escape;
-                             fi
-                             stty echo icanon 
-                         else
-                             # Got any other character — treat as Enter
-                             echo enter;
-                         fi
+                        read -s -n1 key 2>/dev/null
+                        case "$key" in
+                            ${ESC}) # Escape or escape sequence — try to read the remaining [A / [B in one shot, with 100ms timeout
+                                stty -echo -icanon min 0 time 1
+                                seq=$(dd bs=1 count=2 2>/dev/null)
+                                case "$seq" in
+                                    "[A") echo up ;; # up arrow
+                                    "[B") echo down ;; # down arrow
+                                    "[C") echo launch ;; # right arrow
+                                    *) echo escape  ;; # left arrow, bare escape, or other control codes
+                                esac
+                                stty echo icanon
+                                ;;
+                            x|u) # try to unload this model
+                                echo unload ;;
+                            l) # try to load this model
+                                echo load ;;
+                            q) # exit the menu
+                                echo escape ;;
+                            *) # Got any other character — launch claude
+                                echo launch ;;
+                        esac
                        }
 
     # initially print empty new lines (scroll down if at bottom of screen)
@@ -116,7 +120,7 @@ function select_option {
     local startrow=$(($lastrow - $#))
 
     # ensure cursor and input echoing back on upon a ctrl+c during read -s
-    trap "cursor_blink_on; stty echo; printf '\n'; exit" 2
+    trap "cursor_blink_on; stty sane; printf '\n'; exit" INT
     cursor_blink_off
 
     local selected=0
@@ -134,13 +138,16 @@ function select_option {
         done
 
         # user key control
-        case `key_input` in
-            enter) break;;
+        selected_action=`key_input`
+        case $selected_action in
             up)    ((selected--));
                    if [ $selected -lt 0 ]; then selected=$(($# - 1)); fi;;
             down)  ((selected++));
                    if [ $selected -ge $# ]; then selected=0; fi;;
             escape) cursor_to $lastrow; printf "\n"; cursor_blink_on; cleanup; exit 0;;
+            *) # anything else leaves the loop
+                break;;
+
         esac
     done
 
@@ -148,12 +155,13 @@ function select_option {
     cursor_to "$lastrow"
     printf "\n"
     cursor_blink_on
-
+    
     selected_option=$selected
 }
 
 models=()
 prompts=()
+API_TYPE="openai"
 
 function models_omlx() {
     # Read models from the oMLX models/status endpoint
@@ -167,25 +175,26 @@ function models_omlx() {
         true
     }
     if [[ -n "$response" ]]; then
+        API_TYPE="omlx"
         # output status info
         # jq -r <<<"${status}"
 
         DEFAULT_MODEL=$(jq -r '.default_model' <<<"${status}")
         LOADED_COUNT=$(jq -r '.models_loaded' <<<"${status}")
+        LOADING_COUNT=$(jq -r '.models_loading' <<<"${status}")
         DISCOVERED_COUNT=$(jq -r '.models_discovered' <<<"${status}")
         MEM_USED=$(jq -r '.model_memory_used_formatted' <<<"${status}")
         MEM_TOTAL=$(jq -r '.model_memory_max_formatted' <<<"${status}")
         
         # printf "default model: %s\n" "${DEFAULT_MODEL}"
-        printf "oMLX: %s/%s loaded, using %s of %s" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
-        
+        printf "oMLX: %s/%s loaded, %s loading, using %s of %s" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${LOADING_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
         
         # oMLX endpoint provides some rich data
         lines=$(echo "$response" | jq -r '.models[] | [.id, .max_context_window, .config_model_type, .loaded, .estimated_size] | join(",")')
         # case-insensitive sort
         sorted=$(echo "$lines" | sort -f)
-        IFS=$'\n' models=($(echo "$lines" | awk -F',' '{print $1}'))
-        IFS=$'\n' prompts=($(echo "$lines" | awk -F',' '{printf "%s%s (type:%s window:%dk, size:%.1fG)\n", ($4 == "true")?"✅ ":"   ", $1, $3, $2 / 1024, $5 / (1024.0 * 1024 * 1024)}'))
+        IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{printf "%s%s (type:%s window:%dk, size:%.1fG)\n", ($4 == "true")?"✅ ":"   ", $1, $3, $2 / 1024, $5 / (1024.0 * 1024 * 1024)}'))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"
@@ -201,12 +210,13 @@ function models_lmstudio() {
         true
     }
     if [[ -n "$response" ]]; then
+        API_TYPE="lmstudio"
         # LM Studio endpoint provides some rich data
-        lines=$(echo "$response" | jq -r '.models[] | [.key, .display_name, .architecture, .format] | join(",")')
-        # case-insensitive sort
-        sorted=$(echo "$lines" | sort -f)
-        IFS=$'\n' models=($(echo "$lines" | awk -F',' '{print $1}'))
-        IFS=$'\n' prompts=($(echo "$lines" | awk -F',' '{printf "%s   (key:%s, arch:%s, format:%s)\n", $2, $2, $3, $4}'))
+        lines=$(echo "$response" | jq -r '.models[] | [.key, .display_name, .architecture, .format, (.loaded_instances | length)] | join(",")')
+        # case-insensitive sort on the display_name field
+        sorted=$(echo "$lines" | sort -t ',' -f -k 2)
+        IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{printf "%s%s (key:%s, arch:%s, format:%s)\n", ($5 == "0")?"   ":"✅ ", $2, $1, $3, $4}'))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"
@@ -266,6 +276,7 @@ function select_model() {
         printf "\nAvailable Models:\n"
         select_option "${prompts[@]}"
         model=${models[$selected_option]}
+        # echo "selected_action is ${selected_action}"
     fi
 }
 
@@ -274,6 +285,70 @@ if [[ -z "${CLAUDE_LOCAL_MODEL-}" ]]; then
     CLAUDE_LOCAL_MODEL="$model"
 fi
 
+case "$selected_action" in
+    load)
+        case "$API_TYPE" in
+            "omlx")
+                printf "Attempting to load model %s...\n" "$CLAUDE_LOCAL_MODEL"
+                curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${CLAUDE_LOCAL_MODEL}/load" \
+                    -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" |jq
+                ;;
+            "lmstudio")
+                printf "Attempting to load model %s...\n" "$CLAUDE_LOCAL_MODEL"
+                curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/load" \
+                  -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"model\": \"${CLAUDE_LOCAL_MODEL}\"}" |jq
+                ;;
+            *)
+                printf "Load model not supported on OpenAI endpoint"
+                ;;
+        esac
+        # exit after the attempt. The user can run this script again to refresh.
+        exit 0
+        ;;
+    unload)
+        case "$API_TYPE" in
+            "omlx")
+                printf "Attempting to unload model %s...\n" "$CLAUDE_LOCAL_MODEL"
+                # The unload endpoint needs a session cookie.
+                # Use the login endpoint to generate one.
+                response=$(curl -s --fail -X POST "${ANTHROPIC_BASE_URL}/admin/api/login" \
+                    -H "Content-Type: application/json" \
+                    -d "{\"api_key\":\"${ANTHROPIC_AUTH_TOKEN-}\"}" \
+                    -D -) || {
+                    printf "Couldn't create session cookie.\n"
+                    printf "This will only work with the admin API key -- sub-keys can't access this API.\n"
+                    exit 0
+                }
+                SESSION_COOKIE=$(echo "$response" | grep -i 'set-cookie: omlx_admin_session' \
+                    | sed 's/set-cookie: \(omlx_admin_session=[^;]*\).*/\1/I')
+                # use the session cookie to hit the unload endpoint.
+                curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${CLAUDE_LOCAL_MODEL}/unload" \
+                    -b "${SESSION_COOKIE}" |jq
+                ;;
+            "lmstudio")
+                printf "Attempting to unload model %s...\n" "$CLAUDE_LOCAL_MODEL"
+                curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/unload" \
+                  -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"instance_id\": \"${CLAUDE_LOCAL_MODEL}\"}" |jq
+                ;;
+            *)
+                printf "Unload model not supported on OpenAI endpoint"
+                ;;
+        esac
+        # either way, exit after the attempt. The user can run this script again to refresh.
+        exit 0
+        ;;
+    launch)
+        ;;
+    *)
+        printf "Unknown action: %s" "$selected_action"
+        exit 1
+        ;;
+
+esac
 claude_args=()
 
 # Slimmed-down claude system prompt. Adapted from:
@@ -338,7 +413,7 @@ EOF
 claude_args+=("--tools" "Bash,Glob,Grep,Read,Edit,Write, Skill")
 claude_args+=("--system-prompt" "$(claude_prompt)")
 
-printf "\nLaunching Claude Code with model: %s\n" "${CLAUDE_LOCAL_MODEL}"
+printf "\nLaunching with model: %s\n" "${CLAUDE_LOCAL_MODEL}"
 # doing it this way lets you use 1M context, since it will treat it like Opus
 export ANTHROPIC_DEFAULT_OPUS_MODEL="${CLAUDE_LOCAL_MODEL}"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="${CLAUDE_LOCAL_MODEL}"

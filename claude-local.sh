@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# LM Studio/llama-server Model Selector
-# Connects to an LM Studio or llama-server endpoint, queries available models,
-# and launches Claude Code with the selected model.
+# Local inference server model selector
+# Connects to a local inference server (oMLX, LM Studio, llama-server, etc.) endpoint, 
+# queries available models, and launches Claude Code with the selected model.
 
 set -euo pipefail
 
@@ -158,38 +158,76 @@ function select_model() {
     # Query available models
     models=()
     prompts=()
-    # First try the LM Studio API endpoint -- it provides richer data if it's available
-#    echo "trying ${ANTHROPIC_BASE_URL}/api/v1/models"
-    response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/api/v1/models" 2>/dev/null) || {
-        # This request failed -- we'll fall back to trying the OpenAI style model list below.
-        true
-    }
-    if [[ -n "$response" ]]; then
-        names=()
-        architectures=()
-        formats=()
-        while IFS= read -r model_id; do
-            models+=("$model_id")
-        done < <(printf '%s' "$response" | jq -r '.models[].key')
-        while IFS= read -r model_id; do
-            names+=("$model_id")
-        done < <(printf '%s' "$response" | jq -r '.models[].display_name')
-        while IFS= read -r model_id; do
-            architectures+=("$model_id")
-        done < <(printf '%s' "$response" | jq -r '.models[].architecture')
-        while IFS= read -r model_id; do
-            formats+=("$model_id")
-        done < <(printf '%s' "$response" | jq -r '.models[].format')
-        # build the prompts
-        count=${#models[@]}
-        for (( i=0; i<count; i++ ));
-        do
-            prompts+=("${names[$i]} (key:${models[$i]}, arch:${architectures[$i]}, format:${formats[$i]})")
-        done
+
+    if [[ ${#models[@]} -eq 0 ]]; then
+        # First try the oMLX endpoint 
+#        echo "trying ${ANTHROPIC_BASE_URL}/api/v1/models"
+        response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/v1/models/status" 2>/dev/null) || {
+            # This request failed -- we'll fall back to trying the OpenAI style model list below.
+            true
+        }
+        if [[ -n "$response" ]]; then
+            windows=()
+            architectures=()
+            formats=()
+            sizes=()
+            sort=()
+            while IFS= read -r s; do
+                models+=("$s")
+            done < <(printf '%s' "$response" | jq -r '.models[].id')
+            while IFS= read -r s; do
+                windows+=("$s")
+            done < <(printf '%s' "$response" | jq -r '.models[].max_context_window')
+            while IFS= read -r s; do
+                architectures+=("$s")
+            done < <(printf '%s' "$response" | jq -r '.models[].config_model_type')
+            while IFS= read -r s; do
+                sizes+=("$s")
+            done < <(printf '%s' "$response" | jq -r '.models[].estimated_size')
+            # build the prompts
+            count=${#models[@]}
+            for (( i=0; i<count; i++ ));
+            do
+#                prompts+=("${models[$i]} (window:${windows[$i]}, size:${sizes[$i]}, arch:${architectures[$i]})")
+                prompts+=("${models[$i]}    (arch:${architectures[$i]}), window:${windows[$i]}")
+            done
+        fi
     fi
 
     if [[ ${#models[@]} -eq 0 ]]; then
-        # LM Studio endpoint didn't work (we're probably connecting to a different inference server)
+        # Next try the LM Studio API endpoint -- it provides richer data if it's available
+#        echo "trying ${ANTHROPIC_BASE_URL}/api/v1/models"
+        response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/api/v1/models" 2>/dev/null) || {
+            # This request failed -- we'll fall back to trying the OpenAI style model list below.
+            true
+        }
+        if [[ -n "$response" ]]; then
+            names=()
+            architectures=()
+            formats=()
+            while IFS= read -r model_id; do
+                models+=("$model_id")
+            done < <(printf '%s' "$response" | jq -r '.models[].key')
+            while IFS= read -r model_id; do
+                names+=("$model_id")
+            done < <(printf '%s' "$response" | jq -r '.models[].display_name')
+            while IFS= read -r model_id; do
+                architectures+=("$model_id")
+            done < <(printf '%s' "$response" | jq -r '.models[].architecture')
+            while IFS= read -r model_id; do
+                formats+=("$model_id")
+            done < <(printf '%s' "$response" | jq -r '.models[].format')
+            # build the prompts
+            count=${#models[@]}
+            for (( i=0; i<count; i++ ));
+            do
+                prompts+=("${names[$i]} (key:${models[$i]}, arch:${architectures[$i]}, format:${formats[$i]})")
+            done
+        fi
+    fi
+
+    if [[ ${#models[@]} -eq 0 ]]; then
+        # Neither of those worked.
         # try the OpenAI style
 #        echo "trying ${ANTHROPIC_BASE_URL}/v1/models"
         response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/v1/models" 2>/dev/null) || {

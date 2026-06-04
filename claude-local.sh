@@ -242,8 +242,6 @@ function models_openai() {
 }
 
 function select_model() {
-#    printf "Using endpoint at %s\n" "$ANTHROPIC_BASE_URL"
-
     # Query available models
     models=()
     prompts=()
@@ -280,75 +278,74 @@ function select_model() {
     fi
 }
 
-if [[ -z "${CLAUDE_LOCAL_MODEL-}" ]]; then
+while [[ -z "${CLAUDE_LOCAL_MODEL-}" ]]; do
+    # Run the interactive menu. It will set selected_action based on the user's selection
     select_model
-    CLAUDE_LOCAL_MODEL="$model"
-fi
 
-case "$selected_action" in
-    load)
-        case "$API_TYPE" in
-            "omlx")
-                printf "Attempting to load model %s...\n" "$CLAUDE_LOCAL_MODEL"
-                curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${CLAUDE_LOCAL_MODEL}/load" \
-                    -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" |jq
-                ;;
-            "lmstudio")
-                printf "Attempting to load model %s...\n" "$CLAUDE_LOCAL_MODEL"
-                curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/load" \
-                  -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d "{\"model\": \"${CLAUDE_LOCAL_MODEL}\"}" |jq
-                ;;
-            *)
-                printf "Load model not supported on OpenAI endpoint"
-                ;;
-        esac
-        # exit after the attempt. The user can run this script again to refresh.
-        exit 0
-        ;;
-    unload)
-        case "$API_TYPE" in
-            "omlx")
-                printf "Attempting to unload model %s...\n" "$CLAUDE_LOCAL_MODEL"
-                # The unload endpoint needs a session cookie.
-                # Use the login endpoint to generate one.
-                response=$(curl -s --fail -X POST "${ANTHROPIC_BASE_URL}/admin/api/login" \
-                    -H "Content-Type: application/json" \
-                    -d "{\"api_key\":\"${ANTHROPIC_AUTH_TOKEN-}\"}" \
-                    -D -) || {
-                    printf "Couldn't create session cookie.\n"
-                    printf "This will only work with the admin API key -- sub-keys can't access this API.\n"
-                    exit 0
-                }
-                SESSION_COOKIE=$(echo "$response" | grep -i 'set-cookie: omlx_admin_session' \
-                    | sed 's/set-cookie: \(omlx_admin_session=[^;]*\).*/\1/I')
-                # use the session cookie to hit the unload endpoint.
-                curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${CLAUDE_LOCAL_MODEL}/unload" \
-                    -b "${SESSION_COOKIE}" |jq
-                ;;
-            "lmstudio")
-                printf "Attempting to unload model %s...\n" "$CLAUDE_LOCAL_MODEL"
-                curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/unload" \
-                  -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d "{\"instance_id\": \"${CLAUDE_LOCAL_MODEL}\"}" |jq
-                ;;
-            *)
-                printf "Unload model not supported on OpenAI endpoint"
-                ;;
-        esac
-        # either way, exit after the attempt. The user can run this script again to refresh.
-        exit 0
-        ;;
-    launch)
-        ;;
-    *)
-        printf "Unknown action: %s" "$selected_action"
-        exit 1
-        ;;
+    case "$selected_action" in
+        load)
+            case "$API_TYPE" in
+                "omlx")
+                    printf "Attempting to load model %s...\n" "$model"
+                    curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${model}/load" \
+                        -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" |jq
+                    ;;
+                "lmstudio")
+                    printf "Attempting to load model %s...\n" "$model"
+                    curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/load" \
+                      -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \
+                      -H "Content-Type: application/json" \
+                      -d "{\"model\": \"${model}\"}" |jq
+                    ;;
+                *)
+                    printf "Load model not supported on OpenAI endpoint"
+                    ;;
+            esac
+            # Loop, re-querying models
+            ;;
+        unload)
+            case "$API_TYPE" in
+                "omlx")
+                    printf "Attempting to unload model %s...\n" "$model"
+                    # The unload endpoint needs a session cookie.
+                    # Use the login endpoint to generate one.
+                    response=$(curl -s --fail -X POST "${ANTHROPIC_BASE_URL}/admin/api/login" \
+                        -H "Content-Type: application/json" \
+                        -d "{\"api_key\":\"${ANTHROPIC_AUTH_TOKEN-}\"}" \
+                        -D -) || {
+                        printf "Couldn't create session cookie.\n"
+                        printf "This will only work with the admin API key -- sub-keys can't access this API.\n"
+                        exit 0
+                    }
+                    SESSION_COOKIE=$(echo "$response" | grep -i 'set-cookie: omlx_admin_session' \
+                        | sed 's/set-cookie: \(omlx_admin_session=[^;]*\).*/\1/I')
+                    # use the session cookie to hit the unload endpoint.
+                    curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${model}/unload" \
+                        -b "${SESSION_COOKIE}" |jq
+                    ;;
+                "lmstudio")
+                    printf "Attempting to unload model %s...\n" "$model"
+                    curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/unload" \
+                      -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \
+                      -H "Content-Type: application/json" \
+                      -d "{\"instance_id\": \"${model}\"}" |jq
+                    ;;
+                *)
+                    printf "Unload model not supported on OpenAI endpoint"
+                    ;;
+            esac
+            # Loop, re-querying models
+            ;;
+        launch)
+            CLAUDE_LOCAL_MODEL="$model"
+            ;;
+        *)
+            printf "Unknown action: %s" "$selected_action"
+            exit 1
+            ;;
+    esac
+done
 
-esac
 claude_args=()
 
 # Slimmed-down claude system prompt. Adapted from:

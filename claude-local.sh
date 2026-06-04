@@ -421,6 +421,7 @@ export ANTHROPIC_DEFAULT_HAIKU_MODEL="${CLAUDE_LOCAL_MODEL}"
 # claude_args+=("--model" "$model")
 
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+export CLAUDE_CODE_ATTRIBUTION_HEADER=0
 
 #echo running claude "${claude_args[@]}" "$@" 
 claude "${claude_args[@]}" "$@"

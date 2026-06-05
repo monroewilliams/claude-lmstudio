@@ -84,8 +84,8 @@ function select_option {
     cursor_blink_on()  { printf "${ESC}[?25h"; }
     cursor_blink_off() { printf "${ESC}[?25l"; }
     cursor_to()        { printf "${ESC}[$1;${2:-1}H"; }
-    print_option()     { printf "   $1 "; }
-    print_selected()   { printf "  ${ESC}[7m $1 ${ESC}[27m"; }
+    print_option()     { printf " $1 "; }
+    print_selected()   { printf "${ESC}[7m $1 ${ESC}[27m"; }
     get_cursor_row()   { IFS=';' read -sdR -p $'\E[6n' ROW COL; echo ${ROW#*[}; }
     key_input()        { 
                         read -s -n1 key 2>/dev/null
@@ -162,7 +162,6 @@ function select_option {
 models=()
 prompts=()
 API_TYPE="openai"
-
 function models_omlx() {
     # Read models from the oMLX models/status endpoint
     # echo "trying ${ANTHROPIC_BASE_URL}/v1/models/status"
@@ -176,8 +175,8 @@ function models_omlx() {
     }
     if [[ -n "$response" ]]; then
         API_TYPE="omlx"
-        # output status info
         # jq -r <<<"${status}"
+        # jq -r <<<"${response}"
 
         DEFAULT_MODEL=$(jq -r '.default_model' <<<"${status}")
         LOADED_COUNT=$(jq -r '.models_loaded' <<<"${status}")
@@ -190,11 +189,11 @@ function models_omlx() {
         printf "oMLX: %s/%s loaded, %s loading, using %s of %s" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${LOADING_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
         
         # oMLX endpoint provides some rich data
-        lines=$(echo "$response" | jq -r '.models[] | [.id, .max_context_window, .config_model_type, .loaded, .estimated_size] | join(",")')
-        # case-insensitive sort
-        sorted=$(echo "$lines" | sort -f)
-        IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
-        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{printf "%s%s (type:%s window:%dk, size:%.1fG)\n", ($4 == "true")?"✅ ":"   ", $1, $3, $2 / 1024, $5 / (1024.0 * 1024 * 1024)}'))
+        lines=$(echo "$response" | jq -r '.models[] | [.id, (if has("model_alias") then .model_alias else .id end), .max_context_window, .config_model_type, .model_type, .loaded, .estimated_size] | join(",")')
+        # case-insensitive sort on the model_alias/id field
+        sorted=$(echo "$lines" | sort -t ',' -f -k 2)
+        IFS=$'\n' models=($(echo "$sorted" | awk -F',' 'match($5, /llm|vlm/){print $1}'))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($5, /llm|vlm/){printf "%s%s	%6.1fG, ctx:%4dk, %s/%s\n", ($6 == "true")?"✅ ":"   ", $2, $7 / (1024.0 * 1024 * 1024), $3 / 1024, $5, $4}' | column -t -s '	' ))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"
@@ -211,12 +210,14 @@ function models_lmstudio() {
     }
     if [[ -n "$response" ]]; then
         API_TYPE="lmstudio"
+        # jq -r <<<"${response}"
+
         # LM Studio endpoint provides some rich data
-        lines=$(echo "$response" | jq -r '.models[] | [.key, .display_name, .architecture, .format, (.loaded_instances | length)] | join(",")')
+        lines=$(echo "$response" | jq -r '.models[] | [.key, .display_name, .architecture, .format, (.loaded_instances | length), .size_bytes, .type, .max_context_length, .publisher, if getpath(["quantization", "name"]) then "\(.quantization.name)/" else "" end] | join(",")')
         # case-insensitive sort on the display_name field
         sorted=$(echo "$lines" | sort -t ',' -f -k 2)
-        IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
-        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{printf "%s%s (key:%s, arch:%s, format:%s)\n", ($5 == "0")?"   ":"✅ ", $2, $1, $3, $4}'))
+        IFS=$'\n' models=($(echo "$sorted" | awk -F',' 'match($7, /llm|vlm/) {print $1}'))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($7, /llm|vlm/) {printf "%s%s (%s%s)	%6.1fG, ctx:%4sk, %s/%s/%s\n", ($5 != "0")?"✅ ":"   ", $2, $10, $9, $6 / (1024.0 * 1024 * 1024), $8 / 1024, $4, $7, $3}' | column -t -s '	' ))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"

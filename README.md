@@ -94,17 +94,15 @@ and will just launch claude with the specified model ID.
 
 ```
 $ ./claude-local.sh 
-Using endpoint at http://localhost:1234
-============================================================
+using base url: http://localhost:1234
 
 Available Models:
-   Qwen3.6 27B UD (key:qwen3.6-27b-ud-mlx, arch:qwen3_5, format:mlx) 
-   Qwen3.6 35B A3B (key:qwen/qwen3.6-35b-a3b, arch:qwen35moe, format:gguf) 
-   Gemma 4 26B A4B 4 Vision (key:gemma-4-26b-a4b-mlx-4-vision, arch:gemma4, format:mlx) 
-   Glm 4.7 Flash (key:zai-org/glm-4.7-flash, arch:glm4_moe_lite, format:mlx) 
+   zai-org/glm-4.7-flash 
+   openai/gpt-oss-20b  
+   qwen3.6-35b-a3b-mlx  
 
 
-Launching with model: qwen3.6-27b-ud-mlx
+Launching with model: qwen3.6-35b-a3b-mlx
 
 ```
 
@@ -120,9 +118,9 @@ $ claude-local
 using base url: http://localhost:1234
 oMLX: 1/3 loaded, 0 loading, using 36.89GB of 107.52GB
 Available Models:
-      GLM-4.7-Flash-MLX-8bit (type:glm4_moe_lite window:198k, size:31.1G) 
-      gpt-oss-20b-MXFP4-Q8 (type:gpt_oss window:128k, size:11.8G) 
-   ✅ Qwen3.6-35B-A3B-MLX-8bit (type:qwen3_5_moe window:256k, size:36.9G) 
+      GLM-4.7-Flash-MLX-8bit          31.1G, ctx: 198k, llm/glm4_moe_lite 
+      gpt-oss-20b-MXFP4-Q8            11.8G, ctx: 128k, llm/gpt_oss 
+   ✅ Qwen3.6-35B-A3B-MLX-8bit        36.9G, ctx: 256k, vlm/qwen3_5_moe 
 ```
 
 and LM Studio will look like this:
@@ -132,9 +130,10 @@ $ claude-local
 using base url: http://127.0.0.1:12345
 
 Available Models:
-      Glm 4.7 Flash (key:zai-org/glm-4.7-flash, arch:glm4_moe_lite, format:mlx) 
-      GPT-OSS 20B (key:openai/gpt-oss-20b, arch:gpt-oss, format:gguf) 
-   ✅ Qwen3.6 35B A3B (key:qwen3.6-35b-a3b-mlx, arch:qwen3_5_moe, format:mlx) 
+      Glm 4.7 Flash (8bit)          29.7G, ctx: 198k, mlx/llm/glm4_moe_lite 
+      GPT-OSS 20B (MXFP4)           11.3G, ctx: 128k, gguf/llm/gpt-oss 
+   ✅ Qwen3.6 35B A3B (8bit)        35.1G, ctx: 256k, mlx/llm/qwen3_5_moe 
+ 
 ```
 
 While connected to oMLX or LM Studio, it can also load and unload models directly from the menu (using the `l` and `u` or `x` keys, respectively).

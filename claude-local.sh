@@ -184,9 +184,11 @@ function models_omlx() {
         DISCOVERED_COUNT=$(jq -r '.models_discovered' <<<"${status}")
         MEM_USED=$(jq -r '.model_memory_used_formatted' <<<"${status}")
         MEM_TOTAL=$(jq -r '.model_memory_max_formatted' <<<"${status}")
+        OMLX_VERSION=$(jq -r '.version' <<<"${status}")
+        
         
         # printf "default model: %s\n" "${DEFAULT_MODEL}"
-        printf "oMLX: %s/%s loaded, %s loading, using %s of %s" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${LOADING_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
+        printf "oMLX %s: %s/%s loaded, %s loading, using %s of %s" "${OMLX_VERSION}" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${LOADING_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
         
         # oMLX endpoint provides some rich data
         lines=$(echo "$response" | jq -r '.models[] | [.id, (if has("model_alias") then .model_alias else .id end), .max_context_window, .config_model_type, .model_type, .loaded, .estimated_size] | join(",")')

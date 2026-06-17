@@ -272,6 +272,7 @@ function select_model() {
     if [[ ${#models[@]} -eq 1 ]]; then
         # only one model is available, don't bother with the selector menu.
         model=${models[0]}
+        selected_action="launch"
     else
         # Let user select a model
         printf "\nAvailable Models:\n"

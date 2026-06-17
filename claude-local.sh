@@ -237,10 +237,29 @@ function models_openai() {
     }
 #    printf "response is %s", "$response"
     if [[ -n "$response" ]]; then
-        # The OpenAI endpoint only provides model IDs. Just present them to the user as-is.
-        lines=$(echo "$response" | jq -r '.data[] | .id')
-        IFS=$'\n' models=($lines)
-        prompts=("${models[@]}")
+        # If this is a llama-swap endpoint, it should also provide a list of currently running models on this endpoint
+        running=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/running" 2>/dev/null) || {
+            # This request failed. This is not fatal, it just means it's not a llama-swap endpoint.
+            true
+        }
+        if [[ -n "$running" ]]; then
+            API_TYPE="llamaswap"
+            # jq -r <<<"${running}"
+            # TODO: correlate entries in the running response to add checkmarks to loaded models
+            # TODO: add the ability to unload models with /api/models/unload/:model_id 
+
+            # llama-swap adds additional info in the models response array items.
+            lines=$(echo "$response" | jq -r '.data[] | [.id, .name] | join(",")')
+            # case-insensitive sort on the name field
+            sorted=$(echo "$lines" | sort -t ',' -f -k 2)
+            IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
+            IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{print $2}'))
+        else
+            # The basic OpenAI endpoint only provides model IDs.
+            lines=$(echo "$response" | jq -r '.data[] | .id')
+            IFS=$'\n' models=($lines)
+            prompts=("${models[@]}")
+        fi
     fi
 }
 

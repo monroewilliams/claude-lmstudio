@@ -76,6 +76,10 @@ EOF
 # Interactive menu implementation, taken from:
 # https://unix.stackexchange.com/questions/146570/arrow-key-enter-menu
 # and bent quite a bit for my own purposes.
+# persist the selected row across invocations of this function, so that 
+# the current selection persists across a load/unload.
+selected=0
+
 function select_option {
     options=("$@")
     
@@ -123,7 +127,9 @@ function select_option {
     trap "cursor_blink_on; stty sane; printf '\n'; exit" INT
     cursor_blink_off
 
-    local selected=0
+    # if the previuos selection is now past the end of the list, wrap it to the beginning.
+    if [ $selected -ge $# ]; then selected=0; fi;
+
     while true; do
         # print options by overwriting the last lines
         local idx=0

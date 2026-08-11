@@ -197,11 +197,11 @@ function models_omlx() {
         printf "oMLX %s: %s/%s loaded, %s loading, using %s of %s" "${OMLX_VERSION}" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${LOADING_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
         
         # oMLX endpoint provides some rich data
-        lines=$(echo "$response" | jq -r '.models[] | [.id, (if has("model_alias") then .model_alias else .id end), .max_context_window, .config_model_type, .model_type, .loaded, .estimated_size] | join(",")')
+        lines=$(echo "$response" | jq -r '.models[] | [.id, (if has("model_alias") then .model_alias else .id end), .estimated_size, .max_context_window, .config_model_type, .model_type, .loaded, .pinned] | join(",")')
         # case-insensitive sort on the model_alias/id field
         sorted=$(echo "$lines" | sort -t ',' -f -k 2)
-        IFS=$'\n' models=($(echo "$sorted" | awk -F',' 'match($5, /llm|vlm/){print $1}'))
-        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($5, /llm|vlm/){printf "%s%s	%6.1fG, ctx:%4dk, %s/%s\n", ($6 == "true")?"✅ ":"   ", $2, $7 / (1024.0 * 1024 * 1024), $3 / 1024, $5, $4}' | column -t -s '	' ))
+        IFS=$'\n' models=($(echo "$sorted" | awk -F',' 'match($6, /llm|vlm/){print $1}'))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($6, /llm|vlm/){printf "%s%s	%6.1fG, ctx:%4dk, %s/%s\n", ($8 == "true")?"📌 ":($7 == "true")?"✅ ":"   ", $2, $3 / (1024.0 * 1024 * 1024), $4 / 1024, $6, $5}' | column -t -s '	' ))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"

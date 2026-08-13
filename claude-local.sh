@@ -168,6 +168,27 @@ function select_option {
 models=()
 prompts=()
 API_TYPE="openai"
+function models_exo() {
+    # Read models from the oMLX models/status endpoint
+    # echo "trying ${ANTHROPIC_BASE_URL}/v1/models/status"
+    response=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/models?status=downloaded" 2>/dev/null) || {
+        # This request failed -- response being empty will do the right thing below.
+        true
+    }
+    if [[ -n "$response" ]]; then
+#        jq -r <<<"${response}"
+        API_TYPE="exo"
+
+        # exo endpoint provides some rich data
+        lines=$(echo "$response" | jq -r '.data[] | [.id, .name, .storage_size_megabytes, .context_length, .family] | join(",")')
+        # case-insensitive sort on the display_name field
+        sorted=$(echo "$lines" | sort -t ',' -f -k 2)
+        IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{printf "  %s	%6.1fG, ctx:%4sk, %s\n", $2, $3 / (1024.0), $4 / 1024, $5}' | column -t -s '	' ))
+
+    fi
+}
+
 function models_omlx() {
     # Read models from the oMLX models/status endpoint
     # echo "trying ${ANTHROPIC_BASE_URL}/v1/models/status"
@@ -182,7 +203,7 @@ function models_omlx() {
     if [[ -n "$response" ]]; then
         API_TYPE="omlx"
         # jq -r <<<"${status}"
-        # jq -r <<<"${response}"
+         jq -r <<<"${response}"
 
         DEFAULT_MODEL=$(jq -r '.default_model' <<<"${status}")
         LOADED_COUNT=$(jq -r '.models_loaded' <<<"${status}")
@@ -197,11 +218,11 @@ function models_omlx() {
         printf "oMLX %s: %s/%s loaded, %s loading, using %s of %s" "${OMLX_VERSION}" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${LOADING_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
         
         # oMLX endpoint provides some rich data
-        lines=$(echo "$response" | jq -r '.models[] | [.id, (if has("model_alias") then .model_alias else .id end), .estimated_size, .max_context_window, .config_model_type, .model_type, .loaded, .pinned, .is_favorite, .is_hidden] | join(",")')
+        lines=$(echo "$response" | jq -r '.models[] | [.id, (if has("model_alias") then .model_alias else .id end), .estimated_size, .max_context_window, .config_model_type, .model_type, .loaded, .pinned, .is_favorite, .is_hidden, (.thinking_default != null)] | join(",")')
         # case-insensitive sort on the model_alias/id field
         sorted=$(echo "$lines" | sort -t ',' -f -k 2)
         IFS=$'\n' models=($(echo "$sorted" | awk -F',' 'match($6, /llm|vlm/) && !match($10, /true/){print $1}'))
-        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($6, /llm|vlm/) && !match($10, /true/){printf "%s%s	%6.1fG, ctx:%4dk, %s/%s\n", ($8 == "true")?"📌 ":($7 == "true")?"✅ ":($9 == "true")?"⭐ ":"   ", $2, $3 / (1024.0 * 1024 * 1024), $4 / 1024, $6, $5}' | column -t -s '	' ))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($6, /llm|vlm/) && !match($10, /true/){printf "%s%s	%6.1fG, ctx:%4dk, %s/%s/%s\n", ($8 == "true")?"📌 ":($7 == "true")?"✅ ":($9 == "true")?"⭐ ":"   ", $2, $3 / (1024.0 * 1024 * 1024), $4 / 1024, ($11 == "true")?"🧠":"🤖", $6, $5}' | column -t -s '	' ))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"
@@ -218,14 +239,14 @@ function models_lmstudio() {
     }
     if [[ -n "$response" ]]; then
         API_TYPE="lmstudio"
-        # jq -r <<<"${response}"
+        jq -r <<<"${response}"
 
         # LM Studio endpoint provides some rich data
-        lines=$(echo "$response" | jq -r '.models[] | [.key, .display_name, .architecture, .format, (.loaded_instances | length), .size_bytes, .type, .max_context_length, .publisher, if getpath(["quantization", "name"]) then "\(.quantization.name)/" else "" end] | join(",")')
+        lines=$(echo "$response" | jq -r '.models[] | [.key, .display_name, .architecture, .format, (.loaded_instances | length), .size_bytes, .type, .max_context_length, .publisher, if getpath(["quantization", "name"]) then "\(.quantization.name)/" else "" end, IN(paths;["capabilities","reasoning"])] | join(",")')
         # case-insensitive sort on the display_name field
         sorted=$(echo "$lines" | sort -t ',' -f -k 2)
         IFS=$'\n' models=($(echo "$sorted" | awk -F',' 'match($7, /llm|vlm/) {print $1}'))
-        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($7, /llm|vlm/) {printf "%s%s (%s%s)	%6.1fG, ctx:%4sk, %s/%s/%s\n", ($5 != "0")?"✅ ":"   ", $2, $10, $9, $6 / (1024.0 * 1024 * 1024), $8 / 1024, $4, $7, $3}' | column -t -s '	' ))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($7, /llm|vlm/) {printf "%s%s (%s%s)	%6.1fG, ctx:%4sk, %s/%s/%s/%s\n", ($5 != "0")?"✅ ":"   ", $2, $10, $9, $6 / (1024.0 * 1024 * 1024), $8 / 1024, ($11 == "true")?"🧠":"🤖", $4, $7, $3}' | column -t -s '	' ))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"
@@ -241,8 +262,9 @@ function models_openai() {
         printf "${ERROR} Could not connect to endpoint at %s\n" "$ANTHROPIC_BASE_URL" >&2
         exit 1
     }
-#    printf "response is %s", "$response"
     if [[ -n "$response" ]]; then
+        # jq -r <<<"${response}"
+
         # If this is a llama-swap endpoint, it should also provide a list of currently running models on this endpoint
         running=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/running" 2>/dev/null) || {
             # This request failed. This is not fatal, it just means it's not a llama-swap endpoint.
@@ -275,17 +297,22 @@ function select_model() {
     prompts=()
 
     if [[ ${#models[@]} -eq 0 ]]; then
-        # First try the oMLX endpoint
+        # Try the oMLX endpoint
         models_omlx
     fi
 
     if [[ ${#models[@]} -eq 0 ]]; then
-        # If that didn't find anything, try the lmstudio endpoint
+        # Try the lmstudio endpoint
         models_lmstudio
     fi
 
     if [[ ${#models[@]} -eq 0 ]]; then
-        # Neither of those worked, fall back to the OpenAI endpoint.
+        # Try the exo endpoint
+        models_exo
+    fi
+
+    if [[ ${#models[@]} -eq 0 ]]; then
+        # None of those worked, fall back to the OpenAI endpoint.
         models_openai
     fi
 

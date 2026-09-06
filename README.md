@@ -1,13 +1,13 @@
 # Claude Local - local inference server model selector
 
-A script to connect to a local inference server (oMLX, LM Studio, llama-server, etc.), query available models, and launch Claude Code with your selected model.
+A script to connect to a local inference server (oMLX, LM Studio, llama-server, llama-swap, etc.), query available models, and launch Claude Code with your selected model.
 
 ## Requirements
 
 - Bash (macOS or Linux)
 - `curl`
 - `jq`
-- A local inference server with an Anthropic-compatible endpoint (LM Studio/llama-server/oMLX/etc.)
+- A local inference server with an Anthropic-compatible endpoint. oMLX, LM Studio, llama-server and llama-swap all serve `POST /v1/messages`.
 - Claude Code installed
 
 ## Installation
@@ -31,8 +31,8 @@ A script to connect to a local inference server (oMLX, LM Studio, llama-server, 
 3. The script will:
    - Connect to the specified endpoint
    - Display all available models in an interactive select menu
-   - Let you select a model using arrow keys and Enter
-   - Launch Claude Code with the selected model
+   - Let you select a model with up/down arrow
+   - Launch Claude Code when you press Enter / right arrow
    - Pass any additional command-line arguments to Claude Code
 
 The script replaces the default claude code system prompt, and also limits which tools it has available.

@@ -16,6 +16,17 @@ function cleanup() {
 
 ERROR="\e[0;31m[Error]\e[0m"
 
+# Format the response body with jq if it parses as json, or plain text if not.
+function print_body() {
+    local body="$1"
+    local pretty
+    if pretty=$(jq . <<<"$body" 2>/dev/null); then
+        printf "%s\n" "$pretty"
+    else
+        printf "%s\n" "$body"
+    fi
+}
+
 if [[ -n "${CLAUDE_LOCAL_BASE_URL-}" ]]; then
     # If set, CLAUDE_LOCAL_BASE_URL overrides ANTHROPIC_BASE_URL set in the environment
     export ANTHROPIC_BASE_URL="${CLAUDE_LOCAL_BASE_URL}"
@@ -105,14 +116,16 @@ function select_option {
                                 esac
                                 stty echo icanon
                                 ;;
+                            "") # Enter -- launches, same as the right arrow
+                                echo launch ;;
                             x|u) # try to unload this model
                                 echo unload ;;
                             l) # try to load this model
                                 echo load ;;
                             q) # exit the menu
                                 echo escape ;;
-                            *) # Got any other character — launch claude
-                                echo launch ;;
+                            *) # Got any other character — do nothing
+                                echo ignore ;;
                         esac
                        }
 
@@ -151,8 +164,9 @@ function select_option {
             down)  ((selected++));
                    if [ $selected -ge $# ]; then selected=0; fi;;
             escape) cursor_to $lastrow; printf "\n"; cursor_blink_on; cleanup; exit 0;;
-            *) # anything else leaves the loop
-                break;;
+            launch) break;;
+            *) # anything else stays in the loop
+                ;;
 
         esac
     done
@@ -218,11 +232,31 @@ function models_omlx() {
         printf "oMLX %s: %s/%s loaded, %s loading, using %s of %s" "${OMLX_VERSION}" "${LOADED_COUNT}" "${DISCOVERED_COUNT}" "${LOADING_COUNT}" "${MEM_USED}" "${MEM_TOTAL}"
         
         # oMLX endpoint provides some rich data
-        lines=$(echo "$response" | jq -r '.models[] | [.id, (if has("model_alias") then .model_alias else .id end), .estimated_size, .max_context_window, .config_model_type, .model_type, .loaded, .pinned, .is_favorite, .is_hidden, (.thinking_default != null)] | join(",")')
-        # case-insensitive sort on the model_alias/id field
-        sorted=$(echo "$lines" | sort -t ',' -f -k 2)
-        IFS=$'\n' models=($(echo "$sorted" | awk -F',' 'match($6, /llm|vlm/) && !match($10, /true/){print $1}'))
-        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($6, /llm|vlm/) && !match($10, /true/){printf "%s%s	%6.1fG, ctx:%4dk, %s/%s/%s\n", ($8 == "true")?"📌 ":($7 == "true")?"✅ ":($9 == "true")?"⭐ ":"   ", $2, $3 / (1024.0 * 1024 * 1024), $4 / 1024, ($11 == "true")?"🧠":"🤖", $6, $5}' | column -t -s '	' ))
+        lines=$(echo "$response" | jq -r '
+            .models[]
+            | select(((.model_type // "") | ascii_downcase) == "llm" or ((.model_type // "") | ascii_downcase) == "vlm")
+            | select(.is_hidden != true)
+            | [ .id,
+              (.model_alias // .id),
+              (.estimated_size // ""),
+              (.max_context_window // ""),
+              (.config_model_type // ""),
+              (.model_type // ""),
+              (.loaded == true),
+              (.pinned == true),
+              (.is_favorite == true),
+              (.is_hidden == true),
+              (if (.is_favorite == true) or (.pinned == true) then 0 else 1 end)
+            ] | join(",")')
+        # sort first on favorite/pinned, then case-insensitive on the model_alias/id field
+        sorted=$(echo "$lines" | sort -t ',' -k11,11n -k2,2f)
+        IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{
+            icon = ($8 == "true") ? "📌 " : (($7 == "true") ? "✅ " : (($9 == "true") ? "⭐ " : "   "));
+            size = ($3 == "") ? "       " : sprintf("|%6.1fG", $3 / (1024.0 * 1024 * 1024));
+            ctx  = ($4 == "") ? "      " : sprintf("ctx:%4dk", $4 / 1024);
+            type = ($5 == "") ? $6 : $6 "/" $5;
+            printf "%s%s	%s, %s, %s\n", icon, $2, size, ctx, type }' | column -t -s '	' ))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"
@@ -242,11 +276,31 @@ function models_lmstudio() {
         jq -r <<<"${response}"
 
         # LM Studio endpoint provides some rich data
-        lines=$(echo "$response" | jq -r '.models[] | [.key, .display_name, .architecture, .format, (.loaded_instances | length), .size_bytes, .type, .max_context_length, .publisher, if getpath(["quantization", "name"]) then "\(.quantization.name)/" else "" end, IN(paths;["capabilities","reasoning"])] | join(",")')
+        lines=$(echo "$response" | jq -r '
+            .models[]
+            | select(((.type // "") | ascii_downcase) == "llm" or ((.type // "") | ascii_downcase) == "vlm")
+            | [ .key,
+              (.display_name // .key),
+              (.architecture // ""),
+              (.format // ""),
+              ((.loaded_instances // []) | length),
+              (.size_bytes // ""),
+              ((.type // "") | ascii_downcase),
+              (.max_context_length // ""),
+              (.publisher // ""),
+              (if (.quantization.name // "") != "" then (.quantization.name + "/") else "" end)
+            ] | join(",")')
         # case-insensitive sort on the display_name field
-        sorted=$(echo "$lines" | sort -t ',' -f -k 2)
-        IFS=$'\n' models=($(echo "$sorted" | awk -F',' 'match($7, /llm|vlm/) {print $1}'))
-        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' 'match($7, /llm|vlm/) {printf "%s%s (%s%s)	%6.1fG, ctx:%4sk, %s/%s/%s/%s\n", ($5 != "0")?"✅ ":"   ", $2, $10, $9, $6 / (1024.0 * 1024 * 1024), $8 / 1024, ($11 == "true")?"🧠":"🤖", $4, $7, $3}' | column -t -s '	' ))
+        sorted=$(echo "$lines" | sort -t ',' -k2,2f)
+        IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
+        IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{
+            icon = ($5 != "0") ? "✅ " : "   ";
+            size = ($6 == "") ? "       " : sprintf("|%6.1fG", $6 / (1024.0 * 1024 * 1024));
+            ctx  = ($8 == "") ? "      " : sprintf("ctx:%4dk", $8 / 1024);
+            extras = ($10 $9 == "") ? "" : " (" $10 $9 ")";
+            type = $4; if ($7 != "") type = type (type == "" ? "" : "/") $7;
+            if ($3 != "") type = type (type == "" ? "" : "/") $3;
+            printf "%s%s%s	%s, %s, %s\n", icon, $2, extras, size, ctx, type }' | column -t -s '	' ))
         
 #        printf 'models: %s\n' "${models[@]}"
 #        printf 'prompts: %s\n' "${prompts[@]}"
@@ -265,23 +319,32 @@ function models_openai() {
     if [[ -n "$response" ]]; then
         # jq -r <<<"${response}"
 
-        # If this is a llama-swap endpoint, it should also provide a list of currently running models on this endpoint
-        running=$(curl -v -s --fail --max-time 5 -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" "${ANTHROPIC_BASE_URL}/running" 2>/dev/null) || {
-            # This request failed. This is not fatal, it just means it's not a llama-swap endpoint.
-            true
-        }
-        if [[ -n "$running" ]]; then
+        if [[ $(jq -r '[.data[]? | select(.owned_by == "llama-swap")] | length' <<<"${response}") -gt 0 ]]; then
             API_TYPE="llamaswap"
-            # jq -r <<<"${running}"
-            # TODO: correlate entries in the running response to add checkmarks to loaded models
-            # TODO: add the ability to unload models with /api/models/unload/:model_id 
-
             # llama-swap adds additional info in the models response array items.
-            lines=$(echo "$response" | jq -r '.data[] | [.id, .name] | join(",")')
+            lines=$(echo "$response" | jq -r '
+              .data[] 
+              | [
+                  .id,
+                  (.name // .id),
+                  .meta.n_ctx,
+                  (.status.value == "loaded")] 
+              | join(",")')
             # case-insensitive sort on the name field
             sorted=$(echo "$lines" | sort -t ',' -f -k 2)
             IFS=$'\n' models=($(echo "$sorted" | awk -F',' '{print $1}'))
-            IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{print $2}'))
+            IFS=$'\n' prompts=($(echo "$sorted" | awk -F',' '{
+              icon = ($4 == "true") ? "✅ " : "   ";
+              desc = "";
+              if ($3 != "") desc = desc (desc == "" ? "" : ", ") sprintf("ctx:%4dk", $3 / 1024);
+              if (desc == "") printf "%s%s\n", icon, $2;
+              else printf "%s%s\t%s\n", icon, $2, desc }' | column -t -s '	' ))
+
+            LOADED_COUNT=$(jq -r '[.data[]? | select(.status.value == "loaded")] | length' <<<"${response}")
+            MODEL_COUNT=$(jq -r '[.data[]?] | length' <<<"${response}")
+            if [[ "${LOADED_COUNT}" -gt 0 ]]; then
+                printf "%s/%s models loaded" "${LOADED_COUNT}" "${MODEL_COUNT}"
+            fi
         else
             # The basic OpenAI endpoint only provides model IDs.
             lines=$(echo "$response" | jq -r '.data[] | .id')
@@ -343,15 +406,21 @@ while [[ -z "${CLAUDE_LOCAL_MODEL-}" ]]; do
             case "$API_TYPE" in
                 "omlx")
                     printf "Attempting to load model %s...\n" "$model"
-                    curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${model}/load" \
-                        -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}" |jq
+                    print_body "$(curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${model}/load" \
+                        -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}")"
                     ;;
                 "lmstudio")
                     printf "Attempting to load model %s...\n" "$model"
-                    curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/load" \
+                    print_body "$(curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/load" \
                       -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \
                       -H "Content-Type: application/json" \
-                      -d "{\"model\": \"${model}\"}" |jq
+                      -d "{\"model\": \"${model}\"}")"
+                    ;;
+                "llamaswap")
+                    printf "Attempting to load model %s...\n" "$model"
+                    # llama-swap has no load endpoint, the props query loads it as a side-effect
+                    print_body "$(curl -s "${ANTHROPIC_BASE_URL}/props?model=$(jq -rn --arg m "$model" '$m|@uri')" \
+                      -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}")"
                     ;;
                 *)
                     printf "Load model not supported on OpenAI endpoint"
@@ -371,20 +440,26 @@ while [[ -z "${CLAUDE_LOCAL_MODEL-}" ]]; do
                         -D -) || {
                         printf "Couldn't create session cookie.\n"
                         printf "This will only work with the admin API key -- sub-keys can't access this API.\n"
-                        exit 0
+                        continue
                     }
                     SESSION_COOKIE=$(echo "$response" | grep -i 'set-cookie: omlx_admin_session' \
                         | sed 's/set-cookie: \(omlx_admin_session=[^;]*\).*/\1/I')
                     # use the session cookie to hit the unload endpoint.
-                    curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${model}/unload" \
-                        -b "${SESSION_COOKIE}" |jq
+                    print_body "$(curl -s -X POST "${ANTHROPIC_BASE_URL}/admin/api/models/${model}/unload" \
+                        -b "${SESSION_COOKIE}")"
                     ;;
                 "lmstudio")
                     printf "Attempting to unload model %s...\n" "$model"
-                    curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/unload" \
+                    print_body "$(curl -s "${ANTHROPIC_BASE_URL}/api/v1/models/unload" \
                       -H "Authorization: Bearer $ANTHROPIC_AUTH_TOKEN" \
                       -H "Content-Type: application/json" \
-                      -d "{\"instance_id\": \"${model}\"}" |jq
+                      -d "{\"instance_id\": \"${model}\"}")"
+                    ;;
+                "llamaswap")
+                    printf "Attempting to unload model %s...\n" "$model"
+                    # On success, the response body will just be "OK", not json
+                    print_body "$(curl -s -X POST "${ANTHROPIC_BASE_URL}/api/models/unload/$(jq -rn --arg m "$model" '$m|@uri')" \
+                      -H "Authorization: Bearer ${ANTHROPIC_AUTH_TOKEN-}")"
                     ;;
                 *)
                     printf "Unload model not supported on OpenAI endpoint"
